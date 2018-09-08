@@ -50,3 +50,20 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Compiled binary addons (https://nodejs.org/api/addons.html)
+build/Release
+
+# Dependency directories
+node_modules/
+
+# vim
+*.swo
+*.swp
+*~
+
+# MacOS
+.DS_Store
+
+# Do NOT commit package-lock.json
+package-lock.json
