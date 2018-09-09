@@ -22,6 +22,6 @@ Run `npm run demos` for the list of available demos.
 
 ## Acknowledgements
 
-- [N-API example](https://github.com/gabrielschulhof/abi-stable-node-addon-examples/thread_safe_function_round_trip/node-api)
+- [N-API example](https://github.com/gabrielschulhof/abi-stable-node-addon-examples/tree/tsfn_round_trip/thread_safe_function_round_trip/node-api)
 - [µSockets](https://github.com/uNetworking/uSockets)
 - [epoll](https://github.com/fivdi/epoll)
