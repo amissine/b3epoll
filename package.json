@@ -26,6 +26,9 @@
     "url": "https://github.com/amissine/b3epoll/issues"
   },
   "homepage": "https://github.com/amissine/b3epoll#readme",
+  "engines": {
+    "node": ">=10.10"
+  },
   "dependencies": {
     "bindings": "~1.2.1"
   },

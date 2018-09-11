@@ -12,4 +12,8 @@ describe('Basic B3 functionality', () => {
     assert.ok(b3.done(), 'b3.done()')
     done()
   })
+  it('allows exactly one singleton instance of itself', done => {
+    assert.throws(() => { var x = new B3(); return x }, 'Must throw Error')
+    done()
+  })
 })
