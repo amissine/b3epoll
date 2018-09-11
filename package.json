@@ -1,0 +1,37 @@
+{
+  "name": "b3epoll",
+  "version": "0.0.0",
+  "description": "Bidirectional Bounded Buffer with N-API and Linux Epoll, pure C implementation",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run lint && npm run unit",
+    "unit": "mocha",
+    "lint": "standard",
+    "lintFix": "standard --fix"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amissine/b3epoll.git"
+  },
+  "keywords": [
+    "producer-consumer",
+    "nodejs",
+    "n-api",
+    "linux",
+    "epoll"
+  ],
+  "author": "Alec Missine",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/amissine/b3epoll/issues"
+  },
+  "homepage": "https://github.com/amissine/b3epoll#readme",
+  "dependencies": {
+    "bindings": "~1.2.1"
+  },
+  "devDependencies": {
+    "assert-plus": "^1.0.0",
+    "mocha": "^5.2.0",
+    "standard": "^11.0.1"
+  }
+}
