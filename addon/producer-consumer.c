@@ -2,102 +2,53 @@
 #include <stdlib.h>
 #include <string.h>
 #include <uv.h>
-#define NAPI_EXPERIMENTAL
 #include <node_api.h>
 #include "addon.h"
 
-#define REPORT_EVERY 10000
+volatile unsigned int produceCount = 0, consumeCount = 0;
+TokenType sharedBuffer[BUFFER_SIZE];
 
-// An item that will be generated from the thread, passed into JavaScript, and
-// ultimately marked as resolved when the JavaScript passes it back into the
-// addon instance with a return value.
-typedef struct ThreadItem {
-  // This field is read-only once set, so it need not be protected by the mutex.
-  int the_prime;
-
-  // This field is only accessed from the secondary thread, so it also need not
-  // be protected by the mutex.
-  struct ThreadItem* next;
-
-  // These two values must be protected by the mutex.
-  bool call_has_returned;
-  bool return_value;
-} ThreadItem;
-
-// The data associated with an instance of the addon. This takes the place of
-// global static variables, while allowing multiple instances of the addon to
-// co-exist.
-typedef struct {
-  uv_mutex_t check_status_mutex;
-  uv_thread_t the_thread;
-  napi_threadsafe_function tsfn;
-  napi_ref thread_item_constructor;
-  bool js_accepts;
-} AddonData;
-
-// Constructor for instances of the `ThreadItem` class. This doesn't need to do
-// anything since all we want the class for is to be able to type-check
-// JavaScript objects that carry within them a pointer to a native `ThreadItem`
-// structure.
-static napi_value ThreadItemConstructor(napi_env env, napi_callback_info info) {
-  return NULL;
+static void produceTokens (*tokenConsumed, *tokenConsumedMutex) {
+  while (1) {
+    producer();
+    uv_mutex_lock(tokenConsumedMutex);
+    while (produceCount - consumeCount == BUFFER_SIZE) // sharedBuffer is full 
+      uv_cond_wait(tokenConsumed, tokenConsumedMutex);
+    uv_mutex_unlock(tokenConsumedMutex);
+  }
 }
 
-static void addon_is_unloading(napi_env env, void* data, void* hint) {
-  AddonData* addon_data = (AddonData*)data;
-  uv_mutex_destroy(&(addon_data->check_status_mutex));
-  assert(napi_delete_reference(env,
-                               addon_data->thread_item_constructor) == napi_ok);
-  free(data);
+static void consumeTokens (*tokenProduced, *tokenProducedMutex) {
+  while (1) {
+    consumer();
+    uv_mutex_lock(tokenProducedMutex);
+    while (produceCount - consumeCount == 0) // sharedBuffer is empty
+      uv_cond_wait(tokenProduced, tokenProducedMutex);
+    uv_mutex_unlock(tokenProducedMutex);
+  }
 }
 
-// This function is responsible for converting the native data coming in from
-// the secondary thread to JavaScript values, and for calling the JavaScript
-// function. It may also be called with `env` and `js_cb` set to `NULL` when
-// Node.js is terminating and there are items coming in from the secondary
-// thread left to process. In that case, this function does nothing, since it is
-// the secondary thread that frees the items.
-static void CallJs(napi_env env, napi_value js_cb, void* context, void* data) {
-  AddonData* addon_data = (AddonData*)context;
-  napi_value constructor;
+static void producer (*tokenProduced, *tokenProducedMutex) {
+  while (1) {
+    if (produceCount - consumeCount == BUFFER_SIZE) break;
+    sharedBuffer[produceCount % BUFFER_SIZE] = produceToken();
+    if (produceCount++ - consumeCount == 0) {
+      uv_mutex_lock(tokenProducedMutex);
+      uv_cond_signal(tokenProduced);
+      uv_mutex_unlock(tokenProducedMutex);
+    }
+  }
+}
 
-  // The semantics of this example are such that, once the JavaScript returns
-  // `false`, the `ThreadItem` structures can no longer be accessed, because the
-  // thread terminates and frees them all. Thus, we record the instant when
-  // JavaScript returns `false` by setting `addon_data->js_accepts` to `false`
-  // in `RegisterReturnValue` below, and we use the value here to decide whether
-  // the data coming in from the secondary thread is stale or not.
-  if (addon_data->js_accepts && !(env == NULL || js_cb == NULL)) {
-    napi_value undefined, argv[2];
-    // Retrieve the JavaScript `undefined` value. This will serve as the `this`
-    // value for the function call.
-    assert(napi_get_undefined(env, &undefined) == napi_ok);
-
-    // Retrieve the constructor for the JavaScript class from which the item
-    // holding the native data will be constructed.
-    assert(napi_get_reference_value(env,
-                                    addon_data->thread_item_constructor,
-                                    &constructor) == napi_ok);
-
-    // Construct a new instance of the JavaScript class to hold the native item.
-    assert(napi_new_instance(env, constructor, 0, NULL, &argv[0]) == napi_ok);
-
-    // Associate the native item with the newly constructed JavaScript object.
-    // We assume that the JavaScript side will eventually pass this JavaScript
-    // object back to us via `RegisterReturnValue`, which will allow the
-    // eventual deallocation of the native data. That's why we do not provide a
-    // finalizer here.
-    assert(napi_wrap(env, argv[0], data, NULL, NULL, NULL) == napi_ok);
-
-    // Convert the prime number to a number `napi_value` we can pass into
-    // JavaScript.
-    assert(napi_create_int32(env,
-                             ((ThreadItem*)data)->the_prime,
-                             &argv[1]) == napi_ok);
-
-    // Call the JavaScript function with the item as wrapped into an instance of
-    // the JavaScript `ThreadItem` class and the prime.
-    assert(napi_call_function(env, undefined, js_cb, 2, argv, NULL) == napi_ok);
+static void consumer (*tokenConsumed, *tokenConsumedMutex) {
+  while (1) {
+    if (produceCount - consumeCount == 0) break;
+    consumeToken(&sharedBuffer[consumeCount % BUFFER_SIZE]);
+    if (produceCount - consumeCount++ == BUFFER_SIZE) {
+      uv_mutex_lock(tokenConsumedMutex);
+      uv_cond_signal(tokenConsumed);
+      uv_mutex_unlock(tokenConsumedMutex);
+    }
   }
 }
 

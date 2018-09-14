@@ -8,33 +8,6 @@
 
 #define REPORT_EVERY 10000
 
-// An item that will be generated from the thread, passed into JavaScript, and
-// ultimately marked as resolved when the JavaScript passes it back into the
-// addon instance with a return value.
-typedef struct ThreadItem {
-  // This field is read-only once set, so it need not be protected by the mutex.
-  int the_prime;
-
-  // This field is only accessed from the secondary thread, so it also need not
-  // be protected by the mutex.
-  struct ThreadItem* next;
-
-  // These two values must be protected by the mutex.
-  bool call_has_returned;
-  bool return_value;
-} ThreadItem;
-
-// The data associated with an instance of the addon. This takes the place of
-// global static variables, while allowing multiple instances of the addon to
-// co-exist.
-typedef struct {
-  uv_mutex_t check_status_mutex;
-  uv_thread_t the_thread;
-  napi_threadsafe_function tsfn;
-  napi_ref thread_item_constructor;
-  bool js_accepts;
-} AddonData;
-
 // Constructor for instances of the `ThreadItem` class. This doesn't need to do
 // anything since all we want the class for is to be able to type-check
 // JavaScript objects that carry within them a pointer to a native `ThreadItem`
