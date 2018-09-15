@@ -1,89 +1,6 @@
-#include <assert.h>
-#include <stdlib.h>
-#include <string.h>
-#include <uv.h>
-#define NAPI_EXPERIMENTAL
-#include <node_api.h>
 #include "addon.h"
 
 #define REPORT_EVERY 10000
-
-// Constructor for instances of the `ThreadItem` class. This doesn't need to do
-// anything since all we want the class for is to be able to type-check
-// JavaScript objects that carry within them a pointer to a native `ThreadItem`
-// structure.
-static napi_value ThreadItemConstructor(napi_env env, napi_callback_info info) {
-  return NULL;
-}
-
-static void addon_is_unloading(napi_env env, void* data, void* hint) {
-  AddonData* addon_data = (AddonData*)data;
-  uv_mutex_destroy(&(addon_data->check_status_mutex));
-  assert(napi_delete_reference(env,
-                               addon_data->thread_item_constructor) == napi_ok);
-  free(data);
-}
-
-// This function is responsible for converting the native data coming in from
-// the secondary thread to JavaScript values, and for calling the JavaScript
-// function. It may also be called with `env` and `js_cb` set to `NULL` when
-// Node.js is terminating and there are items coming in from the secondary
-// thread left to process. In that case, this function does nothing, since it is
-// the secondary thread that frees the items.
-static void CallJs(napi_env env, napi_value js_cb, void* context, void* data) {
-  AddonData* addon_data = (AddonData*)context;
-  napi_value constructor;
-
-  // The semantics of this example are such that, once the JavaScript returns
-  // `false`, the `ThreadItem` structures can no longer be accessed, because the
-  // thread terminates and frees them all. Thus, we record the instant when
-  // JavaScript returns `false` by setting `addon_data->js_accepts` to `false`
-  // in `RegisterReturnValue` below, and we use the value here to decide whether
-  // the data coming in from the secondary thread is stale or not.
-  if (addon_data->js_accepts && !(env == NULL || js_cb == NULL)) {
-    napi_value undefined, argv[2];
-    // Retrieve the JavaScript `undefined` value. This will serve as the `this`
-    // value for the function call.
-    assert(napi_get_undefined(env, &undefined) == napi_ok);
-
-    // Retrieve the constructor for the JavaScript class from which the item
-    // holding the native data will be constructed.
-    assert(napi_get_reference_value(env,
-                                    addon_data->thread_item_constructor,
-                                    &constructor) == napi_ok);
-
-    // Construct a new instance of the JavaScript class to hold the native item.
-    assert(napi_new_instance(env, constructor, 0, NULL, &argv[0]) == napi_ok);
-
-    // Associate the native item with the newly constructed JavaScript object.
-    // We assume that the JavaScript side will eventually pass this JavaScript
-    // object back to us via `RegisterReturnValue`, which will allow the
-    // eventual deallocation of the native data. That's why we do not provide a
-    // finalizer here.
-    assert(napi_wrap(env, argv[0], data, NULL, NULL, NULL) == napi_ok);
-
-    // Convert the prime number to a number `napi_value` we can pass into
-    // JavaScript.
-    assert(napi_create_int32(env,
-                             ((ThreadItem*)data)->the_prime,
-                             &argv[1]) == napi_ok);
-
-    // Call the JavaScript function with the item as wrapped into an instance of
-    // the JavaScript `ThreadItem` class and the prime.
-    assert(napi_call_function(env, undefined, js_cb, 2, argv, NULL) == napi_ok);
-  }
-}
-
-// When the thread is finished we join it to prevent memory leaks. We can safely
-// set `addon_data->tsfn` to NULL, because the thread-safe function will be
-// cleaned up in the background in response to the secondary thread having
-// called `napi_release_threadsafe_function()`.
-static void ThreadFinished(napi_env env, void* data, void* context) {
-  (void) context;
-  AddonData* addon_data = (AddonData*)data;
-  assert(uv_thread_join(&(addon_data->the_thread)) == 0);
-  addon_data->tsfn = NULL;
-}
 
 // The secondary thread produces prime numbers using a very inefficient
 // algorithm and calls into JavaScript with every REPORT_EVERYth prime number.
@@ -95,7 +12,7 @@ static void ThreadFinished(napi_env env, void* data, void* context) {
 // `addon_data->js_accepts`. When set to `false`, the JavaScript thread will not
 // access the thread items any further, so they can be safely deleted on this
 // thread.
-static void PrimeThread(void* data) {
+void PrimeThread (void* data) {
   AddonData* addon_data = (AddonData*) data;
   int idx_outer, idx_inner;
   int prime_count = 0;

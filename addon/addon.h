@@ -1,10 +1,16 @@
 #ifndef ADDON_H
 #define ADDON_H
 
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include <uv.h>
+#include <node_api.h>
+
 // An item that will be generated from the thread, passed into JavaScript, and
 // ultimately marked as resolved when the JavaScript passes it back into the
 // addon instance with a return value.
-typedef struct ThreadItem {
+typedef struct {
   // This field is read-only once set, so it need not be protected by the mutex.
   int the_prime;
 
@@ -42,6 +48,10 @@ typedef struct {
 
 #define produceToken produceTokenJavascript
 #define consumeToken consumeTokenJavascript
+
+void consumeTokenJavascript (TokenType*);
+void produceTokenJavascript (TokenType*);
+void PrimeThread (void* data); 
 
 #endif // TOKEN_JAVASCRIPT
 #endif // ADDON_H
