@@ -10,7 +10,7 @@
 // An item that will be generated from the thread, passed into JavaScript, and
 // ultimately marked as resolved when the JavaScript passes it back into the
 // addon instance with a return value.
-typedef struct {
+typedef struct ThreadItem {
   // This field is read-only once set, so it need not be protected by the mutex.
   int the_prime;
 
@@ -52,6 +52,7 @@ typedef struct {
 void consumeTokenJavascript (TokenType*);
 void produceTokenJavascript (TokenType*);
 void PrimeThread (void* data); 
+napi_value RegisterReturnValue (napi_env env, napi_callback_info info);
 
 #endif // TOKEN_JAVASCRIPT
 #endif // ADDON_H

@@ -98,61 +98,11 @@ void PrimeThread (void* data) {
                                           napi_tsfn_release) == napi_ok);
 }
 
-// This binding can be called from JavaScript to start the producer-consumer
-// pair of threads.
-static napi_value Start(napi_env env, napi_callback_info info) {
-  size_t argc = 1;
-  napi_value js_cb, work_name;
-  AddonData* addon_data;
-
-  // The binding accepts one parameter - the JavaScript callback function to
-  // call.
-  assert(napi_get_cb_info(env,
-                          info,
-                          &argc,
-                          &js_cb,
-                          NULL,
-                          (void*)&addon_data) == napi_ok);
-
-  // We do not create a second thread if one is already running.
-  assert(addon_data->tsfn == NULL && "Work already in progress");
-
-  addon_data->js_accepts = true;
-
-  // This string describes the asynchronous work.
-  assert(napi_create_string_utf8(env,
-                                 "Thread-safe Function Round Trip Example",
-                                 NAPI_AUTO_LENGTH,
-                                 &work_name) == napi_ok);
-
-  // The thread-safe function will be created with an unlimited queue and with
-  // an initial thread count of 1. The secondary thread will release the
-  // thread-safe function, decreasing its thread count to 0, thereby setting off
-  // the process of cleaning up the thread-safe function.
-  assert(napi_create_threadsafe_function(env,
-                                         js_cb,
-                                         NULL,
-                                         work_name,
-                                         0,
-                                         1,
-                                         addon_data,
-                                         ThreadFinished,
-                                         addon_data,
-                                         CallJs,
-                                         &addon_data->tsfn) == napi_ok);
-
-  // Create the thread that will produce primes and that will call into
-  // JavaScript using the thread-safe function.
-  assert(uv_thread_create(&(addon_data->the_thread), PrimeThread, addon_data) == 0);
-
-  return NULL;
-}
-
 // We use a separate binding to register a return value for a given call into
 // JavaScript, represented by a `ThreadItem` object on both the JavaScript side
 // and the native side. This allows the JavaScript side to asynchronously
 // determine the return value.
-static napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
+napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   // This function accepts two parameters:
   // 1. The thread item passed into JavaScript via `CallJs`, and
   // 2. The desired return value.
@@ -214,78 +164,4 @@ static napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   uv_mutex_unlock(&(addon_data->check_status_mutex));
 
   return NULL;
-}
-
-// Initialize an instance of this addon. This function may be called multiple
-// times if multiple instances of Node.js are running on multiple threads, or if
-// there are multiple Node.js contexts running on the same thread. The return
-// value and the formal parameters in comments remind us that the function body
-// that follows, within which we initialize the addon, has available to it the
-// variables named in the formal parameters, and that it must return a
-// `napi_value`.
-/*napi_value*/ NAPI_MODULE_INIT(/*napi_env env, napi_value exports*/) {
-  // Create the native data that will be associated with this instance of the
-  // addon.
-  AddonData* addon_data =
-      memset(malloc(sizeof(*addon_data)), 0, sizeof(*addon_data));
-
-  // Attach the addon data to the exports object to ensure that they are
-  // destroyed together.
-  assert(napi_wrap(env,
-                   exports,
-                   addon_data,
-                   addon_is_unloading,
-                   NULL,
-                   NULL) == napi_ok);
-
-  // Initialize the various members of the `AddonData` associated with this
-  // addon instance.
-  assert(uv_mutex_init(&(addon_data->check_status_mutex)) == 0);
-
-  napi_value thread_item_class;
-
-  assert(napi_define_class(env,
-                           "ThreadItem",
-                           NAPI_AUTO_LENGTH,
-                           ThreadItemConstructor,
-                           addon_data,
-                           0,
-                           NULL,
-                           &thread_item_class) == napi_ok);
-  assert(napi_create_reference(env,
-                               thread_item_class,
-                               1,
-                               &(addon_data->thread_item_constructor)) ==
-                                  napi_ok);
-
-  // Expose the bindings this addon provides.
-  napi_property_descriptor export_properties[] = {
-    {
-      "start",
-      NULL,
-      Start,
-      NULL,
-      NULL,
-      NULL,
-      napi_default,
-      addon_data
-    },
-    {
-      "stop",
-      NULL,
-      RegisterReturnValue,
-      NULL,
-      NULL,
-      NULL,
-      napi_default,
-      addon_data
-    }
-  };
-  assert(napi_define_properties(env,
-                                exports,
-                                sizeof(export_properties) /
-                                    sizeof(export_properties[0]),
-                                export_properties) == napi_ok);
-
-  return exports;
 }
