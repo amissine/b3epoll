@@ -10,7 +10,11 @@ static napi_value ThreadItemConstructor(napi_env env, napi_callback_info info) {
 
 static void addon_is_unloading(napi_env env, void* data, void* hint) {
   AddonData* addon_data = (AddonData*)data;
-  uv_mutex_destroy(&(addon_data->check_status_mutex));
+  uv_mutex_destroy(&addon_data->check_status_mutex);
+  uv_mutex_destroy(&addon_data->tokenProducedMutex);
+  uv_mutex_destroy(&addon_data->tokenConsumedMutex);
+  uv_cond_destroy(&addon_data->tokenProduced);
+  uv_cond_destroy(&addon_data->tokenConsumed);
   assert(napi_delete_reference(env,
                                addon_data->thread_item_constructor) == napi_ok);
   free(data);
@@ -71,6 +75,9 @@ static void CallJs(napi_env env, napi_value js_cb, void* context, void* data) {
 // cleaned up in the background in response to the secondary thread having
 // called `napi_release_threadsafe_function()`.
 static void ThreadFinished(napi_env env, void* data, void* context) {
+
+  printf("ThreadFinished started\n");
+
   (void) context;
   AddonData* addon_data = (AddonData*)data;
   assert(uv_thread_join(&(addon_data->the_thread)) == 0);
@@ -124,7 +131,7 @@ static napi_value Start(napi_env env, napi_callback_info info) {
   // JavaScript using the thread-safe function.
   assert(uv_thread_create(&(addon_data->the_thread), PrimeThread, addon_data) == 0);
 
-  return NULL;
+  return Start2Threads(env, addon_data);
 }
 
 // Initialize an instance of this addon. This function may be called multiple
@@ -151,7 +158,11 @@ static napi_value Start(napi_env env, napi_callback_info info) {
 
   // Initialize the various members of the `AddonData` associated with this
   // addon instance.
-  assert(uv_mutex_init(&(addon_data->check_status_mutex)) == 0);
+  assert(uv_mutex_init(&addon_data->check_status_mutex) == 0);
+  assert(uv_mutex_init(&addon_data->tokenProducedMutex) == 0);
+  assert(uv_mutex_init(&addon_data->tokenConsumedMutex) == 0);
+  assert(uv_cond_init(&addon_data->tokenProduced) == 0);
+  assert(uv_cond_init(&addon_data->tokenConsumed) == 0);
 
   napi_value thread_item_class;
 

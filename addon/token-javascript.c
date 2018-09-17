@@ -1,6 +1,6 @@
 #include "addon.h"
 
-#define REPORT_EVERY 10000
+#define REPORT_EVERY 1000
 
 // The secondary thread produces prime numbers using a very inefficient
 // algorithm and calls into JavaScript with every REPORT_EVERYth prime number.
@@ -152,6 +152,8 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   // Retrieve the desired return value.
   assert(napi_get_value_bool(env, argv[1], &return_value) == napi_ok);
 
+  printf("RegisterReturnValue return_value %s\n", return_value ? "true" : "false");
+
   // Set `js_accepts` to false in case the JavaScript callback returned false.
   if (addon_data->js_accepts) {
     addon_data->js_accepts = return_value;
@@ -163,5 +165,15 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   item->return_value = return_value;
   uv_mutex_unlock(&(addon_data->check_status_mutex));
 
+  return NULL;
+}
+
+void consumeTokenJavascript (TokenType* tt) {
+}
+
+void produceTokenJavascript (TokenType* tt) {
+}
+
+napi_value Start2ThreadsTokenJavascript (napi_env env, AddonData* ad) {
   return NULL;
 }

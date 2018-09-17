@@ -35,6 +35,9 @@ typedef struct {
   bool js_accepts;
 } AddonData;
 
+void produceTokens (AddonData*);
+void consumeTokens (AddonData*);
+
 #ifdef TOKEN_JAVASCRIPT
 // These definitions are used in the beginning of the development. The data
 // are prime numbers accompanied with the time it took to get the. The both
@@ -48,11 +51,13 @@ typedef struct {
 
 #define produceToken produceTokenJavascript
 #define consumeToken consumeTokenJavascript
+#define Start2Threads Start2ThreadsTokenJavascript
 
 void consumeTokenJavascript (TokenType*);
 void produceTokenJavascript (TokenType*);
 void PrimeThread (void* data); 
 napi_value RegisterReturnValue (napi_env env, napi_callback_info info);
+napi_value Start2ThreadsTokenJavascript (napi_env env, AddonData* ad);
 
 #endif // TOKEN_JAVASCRIPT
 #endif // ADDON_H
