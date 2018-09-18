@@ -28,6 +28,10 @@ typedef struct ThreadItem {
 // co-exist.
 typedef struct {
   uv_mutex_t check_status_mutex, tokenProducedMutex, tokenConsumedMutex;
+#ifdef TOKEN_JAVASCRIPT
+  uv_mutex_t tokenProducingMutex, tokenConsumingMutex;
+  uv_cond_t tokenProducing, tokenConsuming;
+#endif // TOKEN_JAVASCRIPT  
   uv_cond_t tokenProduced, tokenConsumed;
   uv_thread_t the_thread, producerThread, consumerThread;
   napi_threadsafe_function tsfn;
@@ -53,11 +57,11 @@ typedef struct {
 #define consumeToken consumeTokenJavascript
 #define Start2Threads Start2ThreadsTokenJavascript
 
-void consumeTokenJavascript (TokenType*);
-void produceTokenJavascript (TokenType*);
+void consumeTokenJavascript (TokenType*, AddonData*);
+void produceTokenJavascript (TokenType*, AddonData*);
 void PrimeThread (void* data); 
 napi_value RegisterReturnValue (napi_env env, napi_callback_info info);
-napi_value Start2ThreadsTokenJavascript (napi_env env, AddonData* ad);
+napi_value Start2ThreadsTokenJavascript (AddonData* ad);
 
 #endif // TOKEN_JAVASCRIPT
 #endif // ADDON_H

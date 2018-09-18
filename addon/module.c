@@ -5,6 +5,9 @@
 // JavaScript objects that carry within them a pointer to a native `ThreadItem`
 // structure.
 static napi_value ThreadItemConstructor(napi_env env, napi_callback_info info) {
+
+  printf("ThreadItemConstructor started\n");
+
   return NULL;
 }
 
@@ -131,7 +134,15 @@ static napi_value Start(napi_env env, napi_callback_info info) {
   // JavaScript using the thread-safe function.
   assert(uv_thread_create(&(addon_data->the_thread), PrimeThread, addon_data) == 0);
 
-  return Start2Threads(env, addon_data);
+  return Start2Threads(addon_data);
+}
+
+static inline int initAddonData (AddonData* ad) {
+  return (uv_mutex_init(&ad->check_status_mutex) == 0) &&
+    (uv_mutex_init(&ad->tokenProducedMutex) == 0) &&
+    (uv_mutex_init(&ad->tokenConsumedMutex) == 0) &&
+    (uv_cond_init(&ad->tokenProduced) == 0) &&
+    (uv_cond_init(&ad->tokenConsumed) == 0);
 }
 
 // Initialize an instance of this addon. This function may be called multiple
@@ -158,11 +169,7 @@ static napi_value Start(napi_env env, napi_callback_info info) {
 
   // Initialize the various members of the `AddonData` associated with this
   // addon instance.
-  assert(uv_mutex_init(&addon_data->check_status_mutex) == 0);
-  assert(uv_mutex_init(&addon_data->tokenProducedMutex) == 0);
-  assert(uv_mutex_init(&addon_data->tokenConsumedMutex) == 0);
-  assert(uv_cond_init(&addon_data->tokenProduced) == 0);
-  assert(uv_cond_init(&addon_data->tokenConsumed) == 0);
+  assert(initAddonData(addon_data));
 
   napi_value thread_item_class;
 

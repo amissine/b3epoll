@@ -168,12 +168,12 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-void consumeTokenJavascript (TokenType* tt) {
+void consumeTokenJavascript (TokenType* tt, AddonData* ad) {
 }
 
-void produceTokenJavascript (TokenType* tt) {
+void produceTokenJavascript (TokenType* tt, AddonData* ad) {
 }
 
-napi_value Start2ThreadsTokenJavascript (napi_env env, AddonData* ad) {
+napi_value Start2ThreadsTokenJavascript (AddonData* ad) {
   return NULL;
 }

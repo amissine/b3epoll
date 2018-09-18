@@ -8,7 +8,7 @@ TokenType sharedBuffer[BUFFER_SIZE];
 static void producer (AddonData* ad) {
   while (1) {
     if (produceCount - consumeCount == BUFFER_SIZE) break;
-    produceToken(&sharedBuffer[produceCount % BUFFER_SIZE]);
+    produceToken(&sharedBuffer[produceCount % BUFFER_SIZE], ad);
     if (produceCount++ - consumeCount == 0) {
       uv_mutex_lock(&ad->tokenProducedMutex);
       uv_cond_signal(&ad->tokenProduced);
@@ -20,7 +20,7 @@ static void producer (AddonData* ad) {
 static void consumer (AddonData* ad) {
   while (1) {
     if (produceCount - consumeCount == 0) break;
-    consumeToken(&sharedBuffer[consumeCount % BUFFER_SIZE]);
+    consumeToken(&sharedBuffer[consumeCount % BUFFER_SIZE], ad);
     if (produceCount - consumeCount++ == BUFFER_SIZE) {
       uv_mutex_lock(&ad->tokenConsumedMutex);
       uv_cond_signal(&ad->tokenConsumed);
