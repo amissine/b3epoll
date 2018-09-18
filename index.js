@@ -15,7 +15,7 @@ class B3 {
       console.log('thePrime: %d', thePrime)
       theItem = item
       // addon.stop(item, true) - ThreadFinished never gets called
-      setTimeout(() => addon.stop(item, true), 200)
+      setTimeout(() => addon.stop(item, true), 300)
     })
     // console.log('start result: ' + result) // undefined
     return result || true

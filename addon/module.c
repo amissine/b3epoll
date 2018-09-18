@@ -1,16 +1,5 @@
 #include "addon.h"
 
-// Constructor for instances of the `ThreadItem` class. This doesn't need to do
-// anything since all we want the class for is to be able to type-check
-// JavaScript objects that carry within them a pointer to a native `ThreadItem`
-// structure.
-static napi_value ThreadItemConstructor(napi_env env, napi_callback_info info) {
-
-  printf("ThreadItemConstructor started\n");
-
-  return NULL;
-}
-
 static void addon_is_unloading(napi_env env, void* data, void* hint) {
   AddonData* addon_data = (AddonData*)data;
   uv_mutex_destroy(&addon_data->check_status_mutex);

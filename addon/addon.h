@@ -23,6 +23,8 @@ typedef struct ThreadItem {
   bool return_value;
 } ThreadItem;
 
+napi_value ThreadItemConstructor(napi_env env, napi_callback_info info);
+
 // The data associated with an instance of the addon. This takes the place of
 // global static variables, while allowing multiple instances of the addon to
 // co-exist.

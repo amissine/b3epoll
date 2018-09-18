@@ -168,6 +168,17 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+// Constructor for instances of the `ThreadItem` class. This doesn't need to do
+// anything since all we want the class for is to be able to type-check
+// JavaScript objects that carry within them a pointer to a native `ThreadItem`
+// structure.
+napi_value ThreadItemConstructor(napi_env env, napi_callback_info info) {
+
+  printf("ThreadItemConstructor started\n");
+
+  return NULL;
+}
+
 void consumeTokenJavascript (TokenType* tt, AddonData* ad) {
 }
 
