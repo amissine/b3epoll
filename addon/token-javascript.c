@@ -152,8 +152,6 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   // Retrieve the desired return value.
   assert(napi_get_value_bool(env, argv[1], &return_value) == napi_ok);
 
-  printf("RegisterReturnValue return_value %s\n", return_value ? "true" : "false");
-
   // Set `js_accepts` to false in case the JavaScript callback returned false.
   if (addon_data->js_accepts) {
     addon_data->js_accepts = return_value;
@@ -168,6 +166,9 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+// WORK IN PROGRESS
+// Replacing ThreadItem with ThreadItemClass instances.
+// ----------------------------------------------------
 // Constructor for instances of the `ThreadItem` class. This doesn't need to do
 // anything since all we want the class for is to be able to type-check
 // JavaScript objects that carry within them a pointer to a native `ThreadItem`

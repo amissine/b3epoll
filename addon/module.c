@@ -1,6 +1,9 @@
 #include "addon.h"
 
 static void addon_is_unloading(napi_env env, void* data, void* hint) {
+
+  printf("addon_is_unloading started\n");
+
   AddonData* addon_data = (AddonData*)data;
   uv_mutex_destroy(&addon_data->check_status_mutex);
   uv_mutex_destroy(&addon_data->tokenProducedMutex);
@@ -134,6 +137,57 @@ static inline int initAddonData (AddonData* ad) {
     (uv_cond_init(&ad->tokenConsumed) == 0);
 }
 
+static inline void defineThreadItemClass (napi_env env, AddonData* ad) {
+  napi_value thread_item_class;
+  napi_property_descriptor properties[] = {
+  };
+  size_t count = sizeof(properties) / sizeof(properties[0]);
+  assert(napi_define_class(env,
+                           "ThreadItem",
+                           NAPI_AUTO_LENGTH,
+                           ThreadItemConstructor,
+                           ad,
+                           0,    // count,
+                           NULL, // properties,
+                           &thread_item_class) == napi_ok);
+  assert(napi_create_reference(env,
+                               thread_item_class,
+                               1,
+                               &ad->thread_item_constructor) == napi_ok);
+}
+
+static inline napi_value bindings (
+    napi_env env, napi_value exports, AddonData* ad) {
+  napi_property_descriptor export_properties[] = {
+    {
+      "start",
+      NULL,
+      Start,
+      NULL,
+      NULL,
+      NULL,
+      napi_default,
+      ad
+    },
+    {
+      "stop",
+      NULL,
+      RegisterReturnValue,
+      NULL,
+      NULL,
+      NULL,
+      napi_default,
+      ad
+    }
+  };
+  size_t count = sizeof(export_properties) / sizeof(export_properties[0]);
+  assert(napi_define_properties(env,
+                                exports,
+                                count,
+                                export_properties) == napi_ok);
+  return exports;
+}
+
 // Initialize an instance of this addon. This function may be called multiple
 // times if multiple instances of Node.js are running on multiple threads, or if
 // there are multiple Node.js contexts running on the same thread. The return
@@ -157,53 +211,10 @@ static inline int initAddonData (AddonData* ad) {
                    NULL) == napi_ok);
 
   // Initialize the various members of the `AddonData` associated with this
-  // addon instance.
+  // addon instance, define ThreadItemClass.
   assert(initAddonData(addon_data));
+  defineThreadItemClass(env, addon_data);
 
-  napi_value thread_item_class;
-
-  assert(napi_define_class(env,
-                           "ThreadItem",
-                           NAPI_AUTO_LENGTH,
-                           ThreadItemConstructor,
-                           addon_data,
-                           0,
-                           NULL,
-                           &thread_item_class) == napi_ok);
-  assert(napi_create_reference(env,
-                               thread_item_class,
-                               1,
-                               &(addon_data->thread_item_constructor)) ==
-                                  napi_ok);
-
-  // Expose the bindings this addon provides.
-  napi_property_descriptor export_properties[] = {
-    {
-      "start",
-      NULL,
-      Start,
-      NULL,
-      NULL,
-      NULL,
-      napi_default,
-      addon_data
-    },
-    {
-      "stop",
-      NULL,
-      RegisterReturnValue,
-      NULL,
-      NULL,
-      NULL,
-      napi_default,
-      addon_data
-    }
-  };
-  assert(napi_define_properties(env,
-                                exports,
-                                sizeof(export_properties) /
-                                    sizeof(export_properties[0]),
-                                export_properties) == napi_ok);
-
-  return exports;
+  // Expose and return the bindings this addon provides.
+  return bindings(env, exports, addon_data);
 }

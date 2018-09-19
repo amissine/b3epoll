@@ -11,19 +11,16 @@ class B3 {
     }
   }
   start () {
-    var result = addon.start((item, thePrime) => {
+    addon.start((item, thePrime) => {
       console.log('thePrime: %d', thePrime)
       theItem = item
-      // addon.stop(item, true) - ThreadFinished never gets called
-      setTimeout(() => addon.stop(item, true), 500)
+      setTimeout(() => addon.stop(item, true), 200)
     })
-    // console.log('start result: ' + result) // undefined
-    return result || true
+    return true
   }
   stop () {
-    var result = addon.stop(theItem, false)
-    // console.log('stop result: ' + result) // undefined
-    return result || true
+    addon.stop(theItem, false)
+    return true
   }
 }
 module.exports = B3

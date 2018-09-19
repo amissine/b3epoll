@@ -8,7 +8,7 @@ class ThreadItemClass {
     ThreadItemClass () {
     }
     static ThreadItemClass* newThreadItem () {
-      cout << "ThreadItemClass::newThreadItem started!" << endl;
+      cout << "ThreadItemClass::newThreadItem started" << endl;
       return new ThreadItemClass();
     }
 };
