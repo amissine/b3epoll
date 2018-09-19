@@ -7,6 +7,10 @@
 #include <uv.h>
 #include <node_api.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 // An item that will be generated from the thread, passed into JavaScript, and
 // ultimately marked as resolved when the JavaScript passes it back into the
 // addon instance with a return value.
@@ -24,6 +28,11 @@ typedef struct ThreadItem {
 } ThreadItem;
 
 napi_value ThreadItemConstructor(napi_env env, napi_callback_info info);
+
+#ifndef __cplusplus
+struct ThreadItemClass;
+struct ThreadItemClass* ThreadItemClass__newThreadItem ();
+#endif // __cplusplus
 
 // The data associated with an instance of the addon. This takes the place of
 // global static variables, while allowing multiple instances of the addon to
@@ -66,4 +75,8 @@ napi_value RegisterReturnValue (napi_env env, napi_callback_info info);
 napi_value Start2ThreadsTokenJavascript (AddonData* ad);
 
 #endif // TOKEN_JAVASCRIPT
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 #endif // ADDON_H

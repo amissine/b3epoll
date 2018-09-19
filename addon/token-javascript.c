@@ -36,7 +36,7 @@ void PrimeThread (void* data) {
       // Create a new thread item and attach it to the list of outstanding
       // `ThreadItem` structures representing calls into JavaScript for which
       // no return value has yet been established.
-      current = memset(malloc(sizeof(*current)), 0, sizeof(*current));
+      current = (ThreadItem*)memset(malloc(sizeof(*current)), 0, sizeof(*current));
       current->the_prime = idx_outer;
       current->call_has_returned = false;
       current->return_value = false;
@@ -173,9 +173,7 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
 // JavaScript objects that carry within them a pointer to a native `ThreadItem`
 // structure.
 napi_value ThreadItemConstructor(napi_env env, napi_callback_info info) {
-
-  printf("ThreadItemConstructor started\n");
-
+  struct ThreadItemClass* toUse = ThreadItemClass__newThreadItem();
   return NULL;
 }
 
