@@ -5,8 +5,7 @@
       "sources": [ 
         "./addon/module.c", 
         "./addon/producer-consumer.c", 
-        "./addon/token-javascript.c",
-        "./addon/ThreadItemClass.cpp" 
+        "./addon/token-javascript.c"
       ],
       "defines": [
         "NAPI_EXPERIMENTAL",

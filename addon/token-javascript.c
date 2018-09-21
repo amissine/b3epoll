@@ -98,6 +98,58 @@ void PrimeThread (void* data) {
                                           napi_tsfn_release) == napi_ok);
 }
 
+// This function is responsible for converting the native data coming in from
+// the secondary thread to JavaScript values, and for calling the JavaScript
+// function. It may also be called with `env` and `js_cb` set to `NULL` when
+// Node.js is terminating and there are items coming in from the secondary
+// thread left to process. In that case, this function does nothing, since it is
+// the secondary thread that frees the items.
+void CallJs(napi_env env, napi_value js_cb, void* context, void* data) {
+  AddonData* addon_data = (AddonData*)context;
+  napi_value constructor;
+
+  // The semantics of this example are such that, once the JavaScript returns
+  // `false`, the `ThreadItem` structures can no longer be accessed, because the
+  // thread terminates and frees them all. Thus, we record the instant when
+  // JavaScript returns `false` by setting `addon_data->js_accepts` to `false`
+  // in `RegisterReturnValue` below, and we use the value here to decide whether
+  // the data coming in from the secondary thread is stale or not.
+  if (addon_data->js_accepts && !(env == NULL || js_cb == NULL)) {
+    napi_value undefined, argv[1];
+    // Retrieve the JavaScript `undefined` value. This will serve as the `this`
+    // value for the function call.
+    assert(napi_get_undefined(env, &undefined) == napi_ok);
+    
+    // Retrieve the constructor for the JavaScript class from which the item
+    // holding the native data will be constructed.
+    assert(napi_get_reference_value(env,
+                                    addon_data->thread_item_constructor,
+                                    &constructor) == napi_ok);
+
+    // Construct a new instance of the JavaScript class to hold the native item.
+    assert(napi_new_instance(env, constructor, 0, NULL, &argv[0]) == napi_ok);
+
+    // Associate the native item with the newly constructed JavaScript object.
+    // We assume that the JavaScript side will eventually pass this JavaScript
+    // object back to us via `RegisterReturnValue`, which will allow the
+    // eventual deallocation of the native data. That's why we do not provide a
+    // finalizer here.
+    assert(napi_wrap(env, argv[0], data, NULL, NULL, NULL) == napi_ok);
+
+    // Call the JavaScript function with the item as wrapped into an instance of
+    // the JavaScript `ThreadItem` class and the prime.
+    assert(napi_call_function(env, undefined, js_cb, 1, argv, NULL) == napi_ok);
+  }
+}
+
+static bool is_thread_item (napi_env env, napi_ref tic, napi_value value) {
+  bool validate;
+  napi_value constructor;
+  assert(napi_ok == napi_get_reference_value(env, tic, &constructor));
+  assert(napi_ok == napi_instanceof(env, value, constructor, &validate));
+  return validate;
+}
+
 // We use a separate binding to register a return value for a given call into
 // JavaScript, represented by a `ThreadItem` object on both the JavaScript side
 // and the native side. This allows the JavaScript side to asynchronously
@@ -108,9 +160,8 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   // 2. The desired return value.
   size_t argc = 2;
   napi_value argv[2];
-  napi_value constructor;
   AddonData* addon_data;
-  bool right_instance, return_value;
+  bool return_value;
   ThreadItem* item;
 
   // Retrieve the parameters with which this function was called.
@@ -132,19 +183,10 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
 
   assert(argc == 2 && "Exactly two arguments were received");
 
-  // Retrieve the constructor for `ThreadItem` instances.
-  assert(napi_get_reference_value(env,
-                                  addon_data->thread_item_constructor,
-                                  &constructor) == napi_ok);
-
   // Make sure the first parameter is an instance of the `ThreadItem` class.
   // This type check ensures that there *is* a pointer stored inside the
   // JavaScript object, and that the pointer is to a `ThreadItem` structure.
-  assert(napi_instanceof(env,
-                         argv[0],
-                         constructor,
-                         &right_instance) == napi_ok);
-  assert(right_instance && "First argument is a `ThreadItem`");
+  assert(is_thread_item(env, addon_data->thread_item_constructor, argv[0]));
 
   // Retrieve the native data from the item.
   assert(napi_unwrap(env, argv[0], (void**)&item) == napi_ok);
@@ -166,16 +208,24 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-// WORK IN PROGRESS
-// Replacing ThreadItem with ThreadItemClass instances.
-// ----------------------------------------------------
 // Constructor for instances of the `ThreadItem` class. This doesn't need to do
 // anything since all we want the class for is to be able to type-check
 // JavaScript objects that carry within them a pointer to a native `ThreadItem`
 // structure.
 napi_value ThreadItemConstructor(napi_env env, napi_callback_info info) {
-  struct ThreadItemClass* toUse = ThreadItemClass__newThreadItem();
   return NULL;
+}
+
+// Getter for the `prime` property of the `ThreadItem` class.
+napi_value GetPrime(napi_env env, napi_callback_info info) {
+  napi_value jsthis, prime_property;
+  AddonData* ad;
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&ad));
+  assert(is_thread_item(env, ad->thread_item_constructor, jsthis));
+  ThreadItem* item;
+  assert(napi_ok == napi_unwrap(env, jsthis, (void**)&item));
+  assert(napi_ok == napi_create_int32(env, item->the_prime, &prime_property));
+  return prime_property;
 }
 
 void consumeTokenJavascript (TokenType* tt, AddonData* ad) {

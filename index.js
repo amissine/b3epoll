@@ -11,8 +11,8 @@ class B3 {
     }
   }
   start () {
-    addon.start((item, thePrime) => {
-      console.log('thePrime: %d', thePrime)
+    addon.start(item => {
+      console.log('item.prime: %d', item.prime)
       theItem = item
       setTimeout(() => addon.stop(item, true), 200)
     })

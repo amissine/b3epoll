@@ -15,56 +15,6 @@ static void addon_is_unloading(napi_env env, void* data, void* hint) {
   free(data);
 }
 
-// This function is responsible for converting the native data coming in from
-// the secondary thread to JavaScript values, and for calling the JavaScript
-// function. It may also be called with `env` and `js_cb` set to `NULL` when
-// Node.js is terminating and there are items coming in from the secondary
-// thread left to process. In that case, this function does nothing, since it is
-// the secondary thread that frees the items.
-static void CallJs(napi_env env, napi_value js_cb, void* context, void* data) {
-  AddonData* addon_data = (AddonData*)context;
-  napi_value constructor;
-
-  // The semantics of this example are such that, once the JavaScript returns
-  // `false`, the `ThreadItem` structures can no longer be accessed, because the
-  // thread terminates and frees them all. Thus, we record the instant when
-  // JavaScript returns `false` by setting `addon_data->js_accepts` to `false`
-  // in `RegisterReturnValue` below, and we use the value here to decide whether
-  // the data coming in from the secondary thread is stale or not.
-  if (addon_data->js_accepts && !(env == NULL || js_cb == NULL)) {
-    napi_value undefined, argv[2];
-    // Retrieve the JavaScript `undefined` value. This will serve as the `this`
-    // value for the function call.
-    assert(napi_get_undefined(env, &undefined) == napi_ok);
-
-    // Retrieve the constructor for the JavaScript class from which the item
-    // holding the native data will be constructed.
-    assert(napi_get_reference_value(env,
-                                    addon_data->thread_item_constructor,
-                                    &constructor) == napi_ok);
-
-    // Construct a new instance of the JavaScript class to hold the native item.
-    assert(napi_new_instance(env, constructor, 0, NULL, &argv[0]) == napi_ok);
-
-    // Associate the native item with the newly constructed JavaScript object.
-    // We assume that the JavaScript side will eventually pass this JavaScript
-    // object back to us via `RegisterReturnValue`, which will allow the
-    // eventual deallocation of the native data. That's why we do not provide a
-    // finalizer here.
-    assert(napi_wrap(env, argv[0], data, NULL, NULL, NULL) == napi_ok);
-
-    // Convert the prime number to a number `napi_value` we can pass into
-    // JavaScript.
-    assert(napi_create_int32(env,
-                             ((ThreadItem*)data)->the_prime,
-                             &argv[1]) == napi_ok);
-
-    // Call the JavaScript function with the item as wrapped into an instance of
-    // the JavaScript `ThreadItem` class and the prime.
-    assert(napi_call_function(env, undefined, js_cb, 2, argv, NULL) == napi_ok);
-  }
-}
-
 // When the thread is finished we join it to prevent memory leaks. We can safely
 // set `addon_data->tsfn` to NULL, because the thread-safe function will be
 // cleaned up in the background in response to the secondary thread having
@@ -140,6 +90,7 @@ static inline int initAddonData (AddonData* ad) {
 static inline void defineThreadItemClass (napi_env env, AddonData* ad) {
   napi_value thread_item_class;
   napi_property_descriptor properties[] = {
+    { "prime", 0, 0, GetPrime, 0, 0, napi_enumerable, ad }
   };
   size_t count = sizeof(properties) / sizeof(properties[0]);
   assert(napi_define_class(env,
@@ -147,8 +98,8 @@ static inline void defineThreadItemClass (napi_env env, AddonData* ad) {
                            NAPI_AUTO_LENGTH,
                            ThreadItemConstructor,
                            ad,
-                           0,    // count,
-                           NULL, // properties,
+                           count,
+                           properties,
                            &thread_item_class) == napi_ok);
   assert(napi_create_reference(env,
                                thread_item_class,

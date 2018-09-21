@@ -7,33 +7,6 @@
 #include <uv.h>
 #include <node_api.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
-
-// An item that will be generated from the thread, passed into JavaScript, and
-// ultimately marked as resolved when the JavaScript passes it back into the
-// addon instance with a return value.
-typedef struct ThreadItem {
-  // This field is read-only once set, so it need not be protected by the mutex.
-  int the_prime;
-
-  // This field is only accessed from the secondary thread, so it also need not
-  // be protected by the mutex.
-  struct ThreadItem* next;
-
-  // These two values must be protected by the mutex.
-  bool call_has_returned;
-  bool return_value;
-} ThreadItem;
-
-napi_value ThreadItemConstructor(napi_env env, napi_callback_info info);
-
-#ifndef __cplusplus
-struct ThreadItemClass;
-struct ThreadItemClass* ThreadItemClass__newThreadItem ();
-#endif // __cplusplus
-
 // The data associated with an instance of the addon. This takes the place of
 // global static variables, while allowing multiple instances of the addon to
 // co-exist.
@@ -55,7 +28,7 @@ void consumeTokens (AddonData*);
 
 #ifdef TOKEN_JAVASCRIPT
 // These definitions are used in the beginning of the development. The data
-// are prime numbers accompanied with the time it took to get the. The both
+// are prime numbers accompanied with the time it took to get one. The both
 // sides of the shared buffer are the JavaScript functions.
 
 // The data in the shared buffer.
@@ -70,13 +43,29 @@ typedef struct {
 
 void consumeTokenJavascript (TokenType*, AddonData*);
 void produceTokenJavascript (TokenType*, AddonData*);
+
+// An item that will be generated from the thread, passed into JavaScript, and
+// ultimately marked as resolved when the JavaScript passes it back into the
+// addon instance with a return value.
+typedef struct ThreadItem {
+  // This field is read-only once set, so it need not be protected by the mutex.
+  int the_prime;
+
+  // This field is only accessed from the secondary thread, so it also need not
+  // be protected by the mutex.
+  struct ThreadItem* next;
+
+  // These two values must be protected by the mutex.
+  bool call_has_returned;
+  bool return_value;
+} ThreadItem;
+
+void CallJs(napi_env env, napi_value js_cb, void* context, void* data);
+napi_value ThreadItemConstructor (napi_env env, napi_callback_info info);
+napi_value GetPrime (napi_env env, napi_callback_info info);
 void PrimeThread (void* data); 
 napi_value RegisterReturnValue (napi_env env, napi_callback_info info);
 napi_value Start2ThreadsTokenJavascript (AddonData* ad);
 
 #endif // TOKEN_JAVASCRIPT
-
-#ifdef __cplusplus
-}
-#endif // __cplusplus
 #endif // ADDON_H
