@@ -24,5 +24,4 @@ Run `npm run demos` for the list of available demos.
 
 - [N-API example](https://github.com/gabrielschulhof/abi-stable-node-addon-examples/tree/tsfn_round_trip/thread_safe_function_round_trip/node-api)
 - [µSockets](https://github.com/uNetworking/uSockets)
-- [Mixing C and C++ Code in the Same Program](https://www.oracle.com/technetwork/articles/servers-storage-dev/mixingcandcpluspluscode-305840.html)
 - [epoll](https://github.com/fivdi/epoll)
