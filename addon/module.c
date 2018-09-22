@@ -83,8 +83,12 @@ static inline int initAddonData (AddonData* ad) {
   return (uv_mutex_init(&ad->check_status_mutex) == 0) &&
     (uv_mutex_init(&ad->tokenProducedMutex) == 0) &&
     (uv_mutex_init(&ad->tokenConsumedMutex) == 0) &&
+    (uv_mutex_init(&ad->tokenProducingMutex) == 0) &&
+    (uv_mutex_init(&ad->tokenConsumingMutex) == 0) &&
     (uv_cond_init(&ad->tokenProduced) == 0) &&
-    (uv_cond_init(&ad->tokenConsumed) == 0);
+    (uv_cond_init(&ad->tokenConsumed) == 0) &&
+    (uv_cond_init(&ad->tokenProducing) == 0) &&
+    (uv_cond_init(&ad->tokenConsuming) == 0);
 }
 
 static inline void defineThreadItemClass (napi_env env, AddonData* ad) {
@@ -110,26 +114,9 @@ static inline void defineThreadItemClass (napi_env env, AddonData* ad) {
 static inline napi_value bindings (
     napi_env env, napi_value exports, AddonData* ad) {
   napi_property_descriptor export_properties[] = {
-    {
-      "start",
-      NULL,
-      Start,
-      NULL,
-      NULL,
-      NULL,
-      napi_default,
-      ad
-    },
-    {
-      "stop",
-      NULL,
-      RegisterReturnValue,
-      NULL,
-      NULL,
-      NULL,
-      napi_default,
-      ad
-    }
+    { "start", 0, Start, 0, 0, 0, napi_default, ad },
+    { "doneWith", 0, RegisterReturnValue, 0, 0, 0, napi_default, ad },
+    { "produceToken", 0, NotifyTokenProducer, 0, 0, 0, napi_default, ad }
   };
   size_t count = sizeof(export_properties) / sizeof(export_properties[0]);
   assert(napi_define_properties(env,

@@ -11,16 +11,25 @@ class B3 {
     }
   }
   start () {
-    addon.start(item => {
-      console.log('item.prime: %d', item.prime)
-      theItem = item
-      setTimeout(() => addon.stop(item, true), 200)
-    })
+    addon.start(onItem)
     return true
   }
   stop () {
-    addon.stop(theItem, false)
+    console.log('theItem.prime: %d', theItem.prime)
+    addon.doneWith(theItem, false) // NO MORE items wanted
     return true
   }
 }
 module.exports = B3
+
+function onItem (item) {
+  console.log('item.prime: %d', item.prime)
+  theItem = item
+  setTimeout(
+    () => {
+      addon.produceToken(item)
+      addon.doneWith(item, true) // MORE items wanted
+    },
+    200
+  )
+}

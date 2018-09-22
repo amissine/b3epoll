@@ -150,6 +150,31 @@ static bool is_thread_item (napi_env env, napi_ref tic, napi_value value) {
   return validate;
 }
 
+// Notify the token producer thread.
+napi_value NotifyTokenProducer (napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  AddonData* addon_data;
+  ThreadItem* item;
+
+  // Retrieve the argument.
+  assert(napi_get_cb_info(env,
+                          info,
+                          &argc,
+                          argv,
+                          NULL,
+                          (void*)&addon_data) == napi_ok);
+  assert(argc == 1 && "Exactly one argument was received");
+
+  // Make sure the argument is an instance of the `ThreadItem` class.
+  // This type check ensures that there *is* a pointer stored inside the
+  // JavaScript object, and that the pointer is to a `ThreadItem` structure.
+  assert(is_thread_item(env, addon_data->thread_item_constructor, argv[0]));
+
+  // Retrieve the native data from the item.
+  assert(napi_unwrap(env, argv[0], (void**)&item) == napi_ok);
+}
+
 // We use a separate binding to register a return value for a given call into
 // JavaScript, represented by a `ThreadItem` object on both the JavaScript side
 // and the native side. This allows the JavaScript side to asynchronously
@@ -231,7 +256,15 @@ napi_value GetPrime(napi_env env, napi_callback_info info) {
 void consumeTokenJavascript (TokenType* tt, AddonData* ad) {
 }
 
+static inline bool producingToken () {
+  return TRUE;
+}
+
 void produceTokenJavascript (TokenType* tt, AddonData* ad) {
+  uv_mutex_lock(&ad->tokenProducingMutex);
+  while (producingToken())
+    uv_cond_wait(&ad->tokenProducing, &ad->tokenProducingMutex);
+  uv_mutex_unlock(&ad->tokenProducingMutex);
 }
 
 napi_value Start2ThreadsTokenJavascript (AddonData* ad) {
