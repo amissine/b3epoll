@@ -154,8 +154,9 @@ static bool is_thread_item (napi_env env, napi_ref tic, napi_value value) {
 napi_value NotifyTokenProducer (napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv[1];
-  AddonData* addon_data;
+  AddonData* ad;
   ThreadItem* item;
+  TokenType* token = memset(malloc(sizeof(*token)), 0, sizeof(*token));
 
   // Retrieve the argument.
   assert(napi_get_cb_info(env,
@@ -163,16 +164,25 @@ napi_value NotifyTokenProducer (napi_env env, napi_callback_info info) {
                           &argc,
                           argv,
                           NULL,
-                          (void*)&addon_data) == napi_ok);
+                          (void*)&ad) == napi_ok);
   assert(argc == 1 && "Exactly one argument was received");
 
   // Make sure the argument is an instance of the `ThreadItem` class.
   // This type check ensures that there *is* a pointer stored inside the
   // JavaScript object, and that the pointer is to a `ThreadItem` structure.
-  assert(is_thread_item(env, addon_data->thread_item_constructor, argv[0]));
+  assert(is_thread_item(env, ad->thread_item_constructor, argv[0]));
 
   // Retrieve the native data from the item.
   assert(napi_unwrap(env, argv[0], (void**)&item) == napi_ok);
+
+  // Initialise the token with the item data, queue it and notify 
+  // the producer thread.
+  initTokenType(token, item->the_prime);
+  uv_mutex_lock(&ad->tokenProducingMutex);
+  fifoIn(&ad->queue, &token->t);
+  uv_cond_signal(&ad->tokenProducing);
+  uv_mutex_unlock(&ad->tokenProducingMutex);
+  return NULL;
 }
 
 // We use a separate binding to register a return value for a given call into

@@ -7,9 +7,13 @@ static void addon_is_unloading(napi_env env, void* data, void* hint) {
   AddonData* addon_data = (AddonData*)data;
   uv_mutex_destroy(&addon_data->check_status_mutex);
   uv_mutex_destroy(&addon_data->tokenProducedMutex);
+  uv_mutex_destroy(&addon_data->tokenProducingMutex);
   uv_mutex_destroy(&addon_data->tokenConsumedMutex);
+  uv_mutex_destroy(&addon_data->tokenConsumingMutex);
   uv_cond_destroy(&addon_data->tokenProduced);
+  uv_cond_destroy(&addon_data->tokenProducing);
   uv_cond_destroy(&addon_data->tokenConsumed);
+  uv_cond_destroy(&addon_data->tokenConsuming);
   assert(napi_delete_reference(env,
                                addon_data->thread_item_constructor) == napi_ok);
   free(data);
@@ -80,6 +84,7 @@ static napi_value Start(napi_env env, napi_callback_info info) {
 }
 
 static inline int initAddonData (AddonData* ad) {
+  fifoInit(&ad->queue);
   return (uv_mutex_init(&ad->check_status_mutex) == 0) &&
     (uv_mutex_init(&ad->tokenProducedMutex) == 0) &&
     (uv_mutex_init(&ad->tokenConsumedMutex) == 0) &&

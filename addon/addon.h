@@ -6,9 +6,35 @@
 #include <string.h>
 #include <uv.h>
 #include <node_api.h>
+#include <sys/time.h>
 
 #ifdef TOKEN_JAVASCRIPT
-struct ThreadItem;
+struct fifo {
+  struct fifo* in;
+  struct fifo* out;
+  unsigned int sid; // sequence id
+  size_t size; // number of tokens in the queue
+};
+static inline struct fifo* fifoInit (struct fifo* q) {
+  q->in = q; q->out = q; q->sid = 0; q->size = 0; return q;
+}
+static inline struct fifo* fifoIn (struct fifo* q, struct fifo* t) {
+  t->in = q->in; t->out = q; q->in->out = t; q->in = t;
+  t->sid = q->sid++; t->size = ++q->size; return q;
+}
+static inline struct fifo* fifoOut (struct fifo* q) {
+  if (q->size == 0) return NULL;
+  struct fifo* t = q->out; q->out = t->out; t->out->in = q;
+  q->size--; return t;
+}
+// For any given element t of the non-empty fifo queue q,
+//
+//   t->sid + 1 == t->out->sid AND
+//
+//   q->out->sid < t->sid if q->out != t AND
+//
+//   q->in->sid > t->sid if q->in != t
+//
 #endif // TOKEN_JAVASCRIPT
 
 // The data associated with an instance of the addon. This takes the place of
@@ -19,7 +45,7 @@ typedef struct {
 #ifdef TOKEN_JAVASCRIPT
   uv_mutex_t tokenProducingMutex, tokenConsumingMutex;
   uv_cond_t tokenProducing, tokenConsuming;
-  struct ThreadItem* lastProduced;
+  struct fifo queue;
 #endif // TOKEN_JAVASCRIPT  
   uv_cond_t tokenProduced, tokenConsumed;
   uv_thread_t the_thread, producerThread, consumerThread;
@@ -38,9 +64,19 @@ void consumeTokens (AddonData*);
 
 // The data in the shared buffer.
 typedef struct {
+  struct fifo t;
   int thePrime;
-  int theDelay;
+  long long int theDelay;
 } TokenType;
+static inline void initTokenType (TokenType* t, int thePrime) {
+  t->thePrime = thePrime;
+  struct timeval timer_us;
+  if (gettimeofday(&timer_us, NULL) == 0) {
+    t->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
+      (long long int) timer_us.tv_usec;
+  }
+  else t->theDelay = -1ll;
+} 
 
 #define produceToken produceTokenJavascript
 #define consumeToken consumeTokenJavascript
@@ -59,11 +95,6 @@ typedef struct ThreadItem {
   // This field is only accessed from the secondary thread, so it also need not
   // be protected by the mutex.
   struct ThreadItem* next;
-
-  // This field is accessed from both the main loop thread (when another item
-  // is produced) and the producer thread (when an item is used to construct
-  // a token), so it must be protected by tokenProducingMutex.
-  struct ThreadItem* prevProduced;
 
   // These two values must be protected by the mutex.
   bool call_has_returned;
