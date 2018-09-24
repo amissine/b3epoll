@@ -266,14 +266,21 @@ napi_value GetPrime(napi_env env, napi_callback_info info) {
 void consumeTokenJavascript (TokenType* tt, AddonData* ad) {
 }
 
-static inline bool producingToken () {
-  return TRUE;
-}
-
 void produceTokenJavascript (TokenType* tt, AddonData* ad) {
+  struct fifo* t;
   uv_mutex_lock(&ad->tokenProducingMutex);
-  while (producingToken())
+  if (ad->queue.size > 0) {
+    uv_mutex_lock(&ad->tokenProducingMutex);
+    t = fifoOut(&ad->queue);
+    if (t) {
+      memcpy(tt, t, sizeof(TokenType));
+      uv_mutex_unlock(&ad->tokenProducingMutex); return;
+    }
+  }
+  while (ad->queue.size == 0)
     uv_cond_wait(&ad->tokenProducing, &ad->tokenProducingMutex);
+  t = fifoOut(&ad->queue);
+  memcpy(tt, t, sizeof(TokenType));
   uv_mutex_unlock(&ad->tokenProducingMutex);
 }
 

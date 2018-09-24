@@ -27,6 +27,9 @@ static inline struct fifo* fifoOut (struct fifo* q) {
   struct fifo* t = q->out; q->out = t->out; t->out->in = q;
   q->size--; return t;
 }
+static inline bool fifoEmpty (struct fifo* q) {
+  return q->size == 0;
+}
 // For any given element t of the non-empty fifo queue q,
 //
 //   t->sid + 1 == t->out->sid AND
