@@ -142,6 +142,36 @@ void CallJs(napi_env env, napi_value js_cb, void* context, void* data) {
   }
 }
 
+void CallJs_onToken(napi_env env, napi_value js_cb, void* context, void* data) {
+  AddonData* addon_data = (AddonData*)context;
+  napi_value constructor;
+  napi_value undefined, argv[1];
+
+  // Retrieve the JavaScript `undefined` value. This will serve as the `this`
+  // value for the function call.
+  assert(napi_get_undefined(env, &undefined) == napi_ok);
+    
+  // Retrieve the constructor for the JavaScript class from which the item
+  // holding the native data will be constructed.
+  assert(napi_get_reference_value(env,
+                                    addon_data->thread_item_constructor,
+                                    &constructor) == napi_ok);
+
+    // Construct a new instance of the JavaScript class to hold the native item.
+    assert(napi_new_instance(env, constructor, 0, NULL, &argv[0]) == napi_ok);
+
+    // Associate the native item with the newly constructed JavaScript object.
+    // We assume that the JavaScript side will eventually pass this JavaScript
+    // object back to us via `RegisterReturnValue`, which will allow the
+    // eventual deallocation of the native data. That's why we do not provide a
+    // finalizer here.
+    assert(napi_wrap(env, argv[0], data, NULL, NULL, NULL) == napi_ok);
+
+    // Call the JavaScript function with the item as wrapped into an instance of
+    // the JavaScript `ThreadItem` class and the prime.
+    assert(napi_call_function(env, undefined, js_cb, 1, argv, NULL) == napi_ok);
+}
+
 static bool is_thread_item (napi_env env, napi_ref tic, napi_value value) {
   bool validate;
   napi_value constructor;
@@ -279,6 +309,7 @@ void produceTokenJavascript (TokenType* tt, AddonData* ad) {
   }
   while (ad->queue.size == 0)
     uv_cond_wait(&ad->tokenProducing, &ad->tokenProducingMutex);
+
   t = fifoOut(&ad->queue);
   memcpy(tt, t, sizeof(TokenType));
   uv_mutex_unlock(&ad->tokenProducingMutex);

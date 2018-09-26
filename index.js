@@ -11,7 +11,7 @@ class B3 {
     }
   }
   start () {
-    addon.start(onItem)
+    addon.start(onToken, onItem)
     return true
   }
   stop () {
@@ -21,6 +21,11 @@ class B3 {
   }
 }
 module.exports = B3
+
+function onToken (token) {
+  console.log('token.prime: %d, token.delta: %dµs', token.prime, token.delta)
+  addon.doneWith(token, true) // MORE tokens wanted
+}
 
 function onItem (item) {
   console.log('item.prime: %d', item.prime)

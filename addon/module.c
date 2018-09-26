@@ -25,7 +25,7 @@ static void addon_is_unloading(napi_env env, void* data, void* hint) {
 // called `napi_release_threadsafe_function()`.
 static void ThreadFinished(napi_env env, void* data, void* context) {
 
-  printf("ThreadFinished started\n");
+  printf("ThreadFinished started\n"); // TODO: the onToken finalization
 
   (void) context;
   AddonData* addon_data = (AddonData*)data;
@@ -36,51 +36,43 @@ static void ThreadFinished(napi_env env, void* data, void* context) {
 // This binding can be called from JavaScript to start the producer-consumer
 // pair of threads.
 static napi_value Start(napi_env env, napi_callback_info info) {
-  size_t argc = 1;
-  napi_value js_cb, work_name;
-  AddonData* addon_data;
+  size_t argc = 2;
+  napi_value js_cb[2], name1, name2;
+  AddonData* ad;
+  char desc2[] = "b3epoll TOKEN_JAVASCRIPT producer";
+  char desc1[] = "b3epoll TOKEN_JAVASCRIPT consumer";
 
-  // The binding accepts one parameter - the JavaScript callback function to
-  // call.
-  assert(napi_get_cb_info(env,
-                          info,
-                          &argc,
-                          &js_cb,
-                          NULL,
-                          (void*)&addon_data) == napi_ok);
+  // The binding accepts two parameters - the JavaScript callback functions
+  // `onToken` and `onItem`.
+  assert(napi_get_cb_info(
+        env, info, &argc, js_cb, NULL, (void*)&ad) == napi_ok);
 
   // We do not create a second thread if one is already running.
-  assert(addon_data->tsfn == NULL && "Work already in progress");
+  assert(ad->tsfn == NULL && "Work already in progress");
 
-  addon_data->js_accepts = true;
+  ad->js_accepts = true;
 
   // This string describes the asynchronous work.
-  assert(napi_create_string_utf8(env,
-                                 "Thread-safe Function Round Trip Example",
-                                 NAPI_AUTO_LENGTH,
-                                 &work_name) == napi_ok);
+  assert(napi_create_string_utf8(
+        env, desc2, NAPI_AUTO_LENGTH, &name2) == napi_ok);
+
+  assert(napi_ok = napi_create_string_utf8(env, desc1, NAPI_AUTO_LENGTH, &name1));
 
   // The thread-safe function will be created with an unlimited queue and with
   // an initial thread count of 1. The secondary thread will release the
   // thread-safe function, decreasing its thread count to 0, thereby setting off
   // the process of cleaning up the thread-safe function.
-  assert(napi_create_threadsafe_function(env,
-                                         js_cb,
-                                         NULL,
-                                         work_name,
-                                         0,
-                                         1,
-                                         addon_data,
-                                         ThreadFinished,
-                                         addon_data,
-                                         CallJs,
-                                         &addon_data->tsfn) == napi_ok);
+  assert(napi_ok = napi_create_threadsafe_function(env, js_cb[2], NULL, name2,
+        0, 1, ad, ThreadFinished, ad, CallJs, &ad->tsfn));
+
+  assert(napi_ok = napi_create_threadsafe_function(env, js_cb[1], NULL, name1,
+        0, 1, ad, ThreadFinished, ad, CallJs_onToken, &ad->onToken));
 
   // Create the thread that will produce primes and that will call into
   // JavaScript using the thread-safe function.
-  assert(uv_thread_create(&(addon_data->the_thread), PrimeThread, addon_data) == 0);
+  assert(uv_thread_create(&(ad->the_thread), PrimeThread, ad) == 0);
 
-  return Start2Threads(addon_data);
+  return Start2Threads(ad);
 }
 
 static inline int initAddonData (AddonData* ad) {
