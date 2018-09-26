@@ -289,7 +289,9 @@ napi_value GetPrime(napi_env env, napi_callback_info info) {
   assert(is_thread_item(env, ad->thread_item_constructor, jsthis));
   ThreadItem* item;
   assert(napi_ok == napi_unwrap(env, jsthis, (void**)&item));
-  assert(napi_ok == napi_create_int32(env, item->the_prime, &prime_property));
+  assert(napi_ok == napi_create_int32(env, 
+        item->the_prime, 
+        &prime_property));
   return prime_property;
 }
 

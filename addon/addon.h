@@ -8,7 +8,6 @@
 #include <node_api.h>
 #include <sys/time.h>
 
-#ifdef TOKEN_JAVASCRIPT
 struct fifo {
   struct fifo* in;
   struct fifo* out;
@@ -38,7 +37,6 @@ static inline bool fifoEmpty (struct fifo* q) {
 //
 //   q->in->sid > t->sid if q->in != t
 //
-#endif // TOKEN_JAVASCRIPT
 
 // The data associated with an instance of the addon. This takes the place of
 // global static variables, while allowing multiple instances of the addon to
@@ -56,6 +54,28 @@ typedef struct {
   napi_ref thread_item_constructor;
   bool js_accepts;
 } AddonData;
+
+static inline void defObj_n_props (napi_env env, AddonData* ad, 
+    const char* utf8ClassName, napi_callback Constructor, napi_ref* constructor, 
+    size_t n,
+    const char** utf8PropName, napi_callback* Getter, napi_callback* Setter) {
+  napi_property_descriptor* properties = malloc(sizeof(properties));
+  assert(properties && "No memory");
+  napi_property_descriptor* p = properties; memset(p, 0, sizeof(p));
+  size_t m = n;
+  while (m--) {
+    p->utf8name = *utf8PropName++;
+    p->getter = *Getter++;
+    p->setter = *Setter++;
+    p->attributes = napi_enumerable;
+    p++->data = ad;
+  }
+  napi_value objType;
+  assert(napi_ok == napi_define_class(env, utf8ClassName, NAPI_AUTO_LENGTH,
+        Constructor, ad, n, properties, &objType));
+  assert(napi_ok == napi_create_reference(env, objType, 1, constructor));
+  free(properties);
+}
 
 void produceTokens (AddonData*);
 void consumeTokens (AddonData*);

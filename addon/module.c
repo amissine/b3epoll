@@ -133,23 +133,26 @@ static inline napi_value bindings (
 /*napi_value*/ NAPI_MODULE_INIT(/*napi_env env, napi_value exports*/) {
   // Create the native data that will be associated with this instance of the
   // addon.
-  AddonData* addon_data =
-      memset(malloc(sizeof(*addon_data)), 0, sizeof(*addon_data));
+  AddonData* ad = memset(malloc(sizeof(*ad)), 0, sizeof(*ad));
 
   // Attach the addon data to the exports object to ensure that they are
   // destroyed together.
-  assert(napi_wrap(env,
-                   exports,
-                   addon_data,
-                   addon_is_unloading,
-                   NULL,
-                   NULL) == napi_ok);
+  assert(napi_wrap(
+        env, exports, ad, addon_is_unloading, NULL, NULL) == napi_ok);
 
   // Initialize the various members of the `AddonData` associated with this
-  // addon instance, define ThreadItemClass.
-  assert(initAddonData(addon_data));
-  defineThreadItemClass(env, addon_data);
+  // addon instance, define ThreadItemClass and TokenClass.
+  assert(initAddonData(ad));
+  // defineThreadItemClass(env, ad);
+  char* propNames[2] = { "prime", NULL };
+  napi_callback getters[2] = { GetPrime, NULL }, setters[2] = { NULL, NULL };
+  defObj_n_props(env, ad, "ThreadItem", ThreadItemConstructor, 
+      &ad->thread_item_constructor, 1, propNames, getters, setters);
+  propNames[1] = "delta";
+  getters = { GetTokenPrime, GetTokenDelta };
+  defObj_n_props(env, ad, "TokenType", TokenTypeConstructor,
+      &ad->token_type_constructor, 2, propNames, getters, setters);
 
   // Expose and return the bindings this addon provides.
-  return bindings(env, exports, addon_data);
+  return bindings(env, exports, ad);
 }
