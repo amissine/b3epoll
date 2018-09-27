@@ -144,11 +144,10 @@ static inline napi_value bindings (
   // addon instance, define ThreadItemClass and TokenClass.
   assert(initAddonData(ad));
   // defineThreadItemClass(env, ad);
-  char* propNames[2] = { "prime", NULL };
+  char* propNames[2] = { "prime", "delta"};
   napi_callback getters[2] = { GetPrime, NULL }, setters[2] = { NULL, NULL };
   defObj_n_props(env, ad, "ThreadItem", ThreadItemConstructor, 
       &ad->thread_item_constructor, 1, propNames, getters, setters);
-  propNames[1] = "delta";
   getters = { GetTokenPrime, GetTokenDelta };
   defObj_n_props(env, ad, "TokenType", TokenTypeConstructor,
       &ad->token_type_constructor, 2, propNames, getters, setters);

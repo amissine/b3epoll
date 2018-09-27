@@ -46,12 +46,13 @@ typedef struct {
 #ifdef TOKEN_JAVASCRIPT
   uv_mutex_t tokenProducingMutex, tokenConsumingMutex;
   uv_cond_t tokenProducing, tokenConsuming;
-  struct fifo queue;
+  struct fifo queue; // produced tokens
 #endif // TOKEN_JAVASCRIPT  
   uv_cond_t tokenProduced, tokenConsumed;
   uv_thread_t the_thread, producerThread, consumerThread;
   napi_threadsafe_function tsfn, onToken;
   napi_ref thread_item_constructor;
+  napi_ref token_type_constructor;
   bool js_accepts;
 } AddonData;
 
@@ -127,7 +128,10 @@ typedef struct ThreadItem {
 void CallJs(napi_env env, napi_value js_cb, void* context, void* data);
 void CallJs_onToken(napi_env env, napi_value js_cb, void* context, void* data);
 napi_value ThreadItemConstructor (napi_env env, napi_callback_info info);
+napi_value TokenTypeConstructor (napi_env env, napi_callback_info info);
 napi_value GetPrime (napi_env env, napi_callback_info info);
+napi_value GetTokenPrime (napi_env env, napi_callback_info info);
+napi_value GetTokenDelta (napi_env env, napi_callback_info info);
 void PrimeThread (void* data); 
 napi_value RegisterReturnValue (napi_env env, napi_callback_info info);
 napi_value NotifyTokenProducer (napi_env env, napi_callback_info info);
