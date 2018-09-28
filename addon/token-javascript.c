@@ -292,7 +292,7 @@ napi_value TokenTypeConstructor (napi_env env, napi_callback_info info) {
 }
 
 // Getter for the `prime` property of the `TokenType` class.
-napi_value GetPrime(napi_env env, napi_callback_info info) {
+napi_value GetTokenPrime(napi_env env, napi_callback_info info) {
   napi_value jsthis, prime_property;
   AddonData* ad;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&ad));
@@ -301,6 +301,20 @@ napi_value GetPrime(napi_env env, napi_callback_info info) {
   assert(napi_ok == napi_unwrap(env, jsthis, (void**)&token));
   assert(napi_ok == napi_create_int32(env, 
         token->thePrime, 
+        &prime_property));
+  return prime_property;
+}
+
+// Getter for the `delay` property of the `TokenType` class.
+napi_value GetTokenDelay(napi_env env, napi_callback_info info) {
+  napi_value jsthis, prime_property;
+  AddonData* ad;
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&ad));
+  assert(is_instanceof(env, ad->thread_item_constructor, jsthis));
+  TokenType* token;
+  assert(napi_ok == napi_unwrap(env, jsthis, (void**)&token));
+  assert(napi_ok == napi_create_int64(env, 
+        token->theDelay, 
         &prime_property));
   return prime_property;
 }
@@ -320,27 +334,48 @@ napi_value GetPrime(napi_env env, napi_callback_info info) {
 }
 
 void consumeTokenJavascript (TokenType* tt, AddonData* ad) {
+
+  // Set the consumer - producer delay in the tt->theDelay field.
+  long long int p = tt->theDelay;
+  struct timeval timer_us;
+  if (gettimeofday(&timer_us, NULL) == 0) {
+    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
+      (long long int) timer_us.tv_usec - p;
+  }
+  else tt->theDelay = -1ll;
+
+  // Pass the consumed token to the 'onToken' JavaScript function,
+  // then wait until the main thread is done with the token.
+  assert(napi_ok == napi_call_threadsafe_function(ad->onToken,
+        tt, napi_tsfn_blocking));
 }
 
 void produceTokenJavascript (TokenType* tt, AddonData* ad) {
   struct fifo* t;
   uv_mutex_lock(&ad->tokenProducingMutex);
-  if (ad->queue.size > 0) {
-    uv_mutex_lock(&ad->tokenProducingMutex);
-    t = fifoOut(&ad->queue);
-    if (t) {
+  if (ad->queue.size > 0) { // token(s) have been produced by the main thread
+    t = fifoOut(&ad->queue); // remove the first token from the queue
+    if (t) { // if it's not NULL, copy it to the shared buffer and return
       memcpy(tt, t, sizeof(TokenType));
-      uv_mutex_unlock(&ad->tokenProducingMutex); return;
+      uv_mutex_unlock(&ad->tokenProducingMutex); 
+      return;
     }
   }
-  while (ad->queue.size == 0)
+  while (ad->queue.size == 0) // wait for a token from the main thread
     uv_cond_wait(&ad->tokenProducing, &ad->tokenProducingMutex);
 
-  t = fifoOut(&ad->queue);
-  memcpy(tt, t, sizeof(TokenType));
+  t = fifoOut(&ad->queue); // remove it from the queue,
+  memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and return
   uv_mutex_unlock(&ad->tokenProducingMutex);
 }
 
 napi_value Start2ThreadsTokenJavascript (AddonData* ad) {
+
+  // Create and start the consumer thread.
+  assert(uv_thread_create(&ad->consumerThread, consumeTokens, ad) == 0);
+
+  // Create and start the producer thread.
+  assert(uv_thread_create(&ad->producerThread, produceTokens, ad) == 0);
+
   return NULL;
 }

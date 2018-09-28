@@ -131,7 +131,7 @@ napi_value ThreadItemConstructor (napi_env env, napi_callback_info info);
 napi_value TokenTypeConstructor (napi_env env, napi_callback_info info);
 napi_value GetPrime (napi_env env, napi_callback_info info);
 napi_value GetTokenPrime (napi_env env, napi_callback_info info);
-napi_value GetTokenDelta (napi_env env, napi_callback_info info);
+napi_value GetTokenDelay (napi_env env, napi_callback_info info);
 void PrimeThread (void* data); 
 napi_value RegisterReturnValue (napi_env env, napi_callback_info info);
 napi_value NotifyTokenProducer (napi_env env, napi_callback_info info);

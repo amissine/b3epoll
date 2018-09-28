@@ -23,7 +23,7 @@ class B3 {
 module.exports = B3
 
 function onToken (token) {
-  console.log('token.prime: %d, token.delta: %dµs', token.prime, token.delta)
+  console.log('token.prime: %d, token.delay: %dµs', token.prime, token.delay)
   addon.doneWith(token, true) // MORE tokens wanted
 }
 

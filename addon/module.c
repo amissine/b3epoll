@@ -34,13 +34,13 @@ static void ThreadFinished(napi_env env, void* data, void* context) {
 }
 
 // This binding can be called from JavaScript to start the producer-consumer
-// pair of threads.
+// pair of threads and the original thread that generates prime numbers.
 static napi_value Start(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value js_cb[2], name1, name2;
   AddonData* ad;
-  char desc2[] = "b3epoll TOKEN_JAVASCRIPT producer";
-  char desc1[] = "b3epoll TOKEN_JAVASCRIPT consumer";
+  char desc2[] = "b3epoll TOKEN_JAVASCRIPT token generator";
+  char desc1[] = "b3epoll TOKEN_JAVASCRIPT token consumer";
 
   // The binding accepts two parameters - the JavaScript callback functions
   // `onToken` and `onItem`.
@@ -52,11 +52,9 @@ static napi_value Start(napi_env env, napi_callback_info info) {
 
   ad->js_accepts = true;
 
-  // This string describes the asynchronous work.
-  assert(napi_create_string_utf8(
-        env, desc2, NAPI_AUTO_LENGTH, &name2) == napi_ok);
-
-  assert(napi_ok = napi_create_string_utf8(env, desc1, NAPI_AUTO_LENGTH, &name1));
+  // These strings describe the asynchronous work.
+  assert(napi_create_string_utf8(env, desc2, NAPI_AUTO_LENGTH, &name2) == napi_ok);
+  assert(napi_ok == napi_create_string_utf8(env, desc1, NAPI_AUTO_LENGTH, &name1));
 
   // The thread-safe function will be created with an unlimited queue and with
   // an initial thread count of 1. The secondary thread will release the
@@ -64,7 +62,6 @@ static napi_value Start(napi_env env, napi_callback_info info) {
   // the process of cleaning up the thread-safe function.
   assert(napi_ok = napi_create_threadsafe_function(env, js_cb[2], NULL, name2,
         0, 1, ad, ThreadFinished, ad, CallJs, &ad->tsfn));
-
   assert(napi_ok = napi_create_threadsafe_function(env, js_cb[1], NULL, name1,
         0, 1, ad, ThreadFinished, ad, CallJs_onToken, &ad->onToken));
 
@@ -72,6 +69,7 @@ static napi_value Start(napi_env env, napi_callback_info info) {
   // JavaScript using the thread-safe function.
   assert(uv_thread_create(&(ad->the_thread), PrimeThread, ad) == 0);
 
+  // Create the producer-consumer pair of threads.
   return Start2Threads(ad);
 }
 
@@ -144,11 +142,11 @@ static inline napi_value bindings (
   // addon instance, define ThreadItemClass and TokenClass.
   assert(initAddonData(ad));
   // defineThreadItemClass(env, ad);
-  char* propNames[2] = { "prime", "delta"};
+  char* propNames[2] = { "prime", "delay"};
   napi_callback getters[2] = { GetPrime, NULL }, setters[2] = { NULL, NULL };
   defObj_n_props(env, ad, "ThreadItem", ThreadItemConstructor, 
       &ad->thread_item_constructor, 1, propNames, getters, setters);
-  getters = { GetTokenPrime, GetTokenDelta };
+  getters = { GetTokenPrime, GetTokenDelay };
   defObj_n_props(env, ad, "TokenType", TokenTypeConstructor,
       &ad->token_type_constructor, 2, propNames, getters, setters);
 
