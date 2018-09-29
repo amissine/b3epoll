@@ -217,13 +217,32 @@ napi_value NotifyTokenProducer (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+napi_value tokenConsumed (napi_env env, AddonData* ad, napi_value* argv) {
+  TokenType* t;
+  bool b;
+
+  // Retrieve the native token.
+  assert(napi_ok == napi_unwrap(env, *argv++, (void**)&t));
+
+  // Retrieve the boolean argument (presently unused).
+  assert(napi_ok == napi_get_value_bool(env, *argv, &b));
+
+  // Notify the consumer thread that the token has been consumed.
+  uv_mutex_lock(&ad->tokenConsumingMutex);
+  t->theDelay = 0ll;
+  uv_cond_signal(&ad->tokenConsuming);
+  uv_mutex_unlock(&ad->tokenConsumingMutex);
+  return NULL;
+}
+
 // We use a separate binding to register a return value for a given call into
-// JavaScript, represented by a `ThreadItem` object on both the JavaScript side
-// and the native side. This allows the JavaScript side to asynchronously
-// determine the return value.
+// JavaScript, represented by a `ThreadItem` or a `TokenType`object on both 
+// the JavaScript side and the native side. This allows the JavaScript side to 
+// asynchronously determine the return value.
 napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   // This function accepts two parameters:
-  // 1. The thread item passed into JavaScript via `CallJs`, and
+  // 1. The JavaScript object passed into JavaScript via either `CallJs`
+  //    or `CallJs_onToken`, and
   // 2. The desired return value.
   size_t argc = 2;
   napi_value argv[2];
@@ -232,12 +251,13 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   ThreadItem* item;
 
   // Retrieve the parameters with which this function was called.
-  assert(napi_get_cb_info(env,
-                          info,
-                          &argc,
-                          argv,
-                          NULL,
-                          (void*)&addon_data) == napi_ok);
+  assert(napi_get_cb_info(env, info, &argc, argv, 
+        NULL, (void*)&addon_data) == napi_ok);
+  assert(argc == 2 && "Exactly two arguments were received");
+
+  // Check if a `TokenType` object has been passed
+  if (is_instanceof(env, addon_data->token_type_constructor, argv[0]))
+    return tokenConsumed(env, addon_data, argv);
 
   // If this function recorded a return value of `false` before, it means that
   // the thread and the associated thread-safe function are shutting down. This,
@@ -247,8 +267,6 @@ napi_value RegisterReturnValue(napi_env env, napi_callback_info info) {
   if (!addon_data->js_accepts) {
     return NULL;
   }
-
-  assert(argc == 2 && "Exactly two arguments were received");
 
   // Make sure the first parameter is an instance of the `ThreadItem` class.
   // This type check ensures that there *is* a pointer stored inside the
@@ -348,6 +366,10 @@ void consumeTokenJavascript (TokenType* tt, AddonData* ad) {
   // then wait until the main thread is done with the token.
   assert(napi_ok == napi_call_threadsafe_function(ad->onToken,
         tt, napi_tsfn_blocking));
+  uv_mutex_lock(&ad->tokenConsumingMutex);
+  while (tt->theDelay != 0ll) // wait for the token to be consumed
+    uv_cond_wait(&ad->tokenConsuming, &ad->tokenConsumingMutex);
+  uv_mutex_unlock(&ad->tokenConsumingMutex);
 }
 
 void produceTokenJavascript (TokenType* tt, AddonData* ad) {

@@ -60,9 +60,9 @@ static napi_value Start(napi_env env, napi_callback_info info) {
   // an initial thread count of 1. The secondary thread will release the
   // thread-safe function, decreasing its thread count to 0, thereby setting off
   // the process of cleaning up the thread-safe function.
-  assert(napi_ok = napi_create_threadsafe_function(env, js_cb[2], NULL, name2,
+  assert(napi_ok == napi_create_threadsafe_function(env, js_cb[1], NULL, name2,
         0, 1, ad, ThreadFinished, ad, CallJs, &ad->tsfn));
-  assert(napi_ok = napi_create_threadsafe_function(env, js_cb[1], NULL, name1,
+  assert(napi_ok == napi_create_threadsafe_function(env, js_cb[0], NULL, name1,
         0, 1, ad, ThreadFinished, ad, CallJs_onToken, &ad->onToken));
 
   // Create the thread that will produce primes and that will call into
@@ -84,26 +84,6 @@ static inline int initAddonData (AddonData* ad) {
     (uv_cond_init(&ad->tokenConsumed) == 0) &&
     (uv_cond_init(&ad->tokenProducing) == 0) &&
     (uv_cond_init(&ad->tokenConsuming) == 0);
-}
-
-static inline void defineThreadItemClass (napi_env env, AddonData* ad) {
-  napi_value thread_item_class;
-  napi_property_descriptor properties[] = {
-    { "prime", 0, 0, GetPrime, 0, 0, napi_enumerable, ad }
-  };
-  size_t count = sizeof(properties) / sizeof(properties[0]);
-  assert(napi_define_class(env,
-                           "ThreadItem",
-                           NAPI_AUTO_LENGTH,
-                           ThreadItemConstructor,
-                           ad,
-                           count,
-                           properties,
-                           &thread_item_class) == napi_ok);
-  assert(napi_create_reference(env,
-                               thread_item_class,
-                               1,
-                               &ad->thread_item_constructor) == napi_ok);
 }
 
 static inline napi_value bindings (
@@ -142,11 +122,12 @@ static inline napi_value bindings (
   // addon instance, define ThreadItemClass and TokenClass.
   assert(initAddonData(ad));
   // defineThreadItemClass(env, ad);
-  char* propNames[2] = { "prime", "delay"};
-  napi_callback getters[2] = { GetPrime, NULL }, setters[2] = { NULL, NULL };
+  char* propNames[2] = { "prime", "delay" };
+  napi_callback getters[2] = { GetPrime, GetTokenDelay }, 
+                setters[2] = { NULL, NULL };
   defObj_n_props(env, ad, "ThreadItem", ThreadItemConstructor, 
       &ad->thread_item_constructor, 1, propNames, getters, setters);
-  getters = { GetTokenPrime, GetTokenDelay };
+  *getters = GetTokenPrime;
   defObj_n_props(env, ad, "TokenType", TokenTypeConstructor,
       &ad->token_type_constructor, 2, propNames, getters, setters);
 

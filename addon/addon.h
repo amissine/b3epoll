@@ -59,10 +59,10 @@ typedef struct {
 static inline void defObj_n_props (napi_env env, AddonData* ad, 
     const char* utf8ClassName, napi_callback Constructor, napi_ref* constructor, 
     size_t n,
-    const char** utf8PropName, napi_callback* Getter, napi_callback* Setter) {
+    char** utf8PropName, napi_callback* Getter, napi_callback* Setter) {
   napi_property_descriptor* properties = malloc(sizeof(properties));
   assert(properties && "No memory");
-  napi_property_descriptor* p = properties; memset(p, 0, sizeof(p));
+  napi_property_descriptor* p = properties; memset(p, 0, sizeof(*p));
   size_t m = n;
   while (m--) {
     p->utf8name = *utf8PropName++;
@@ -78,8 +78,8 @@ static inline void defObj_n_props (napi_env env, AddonData* ad,
   free(properties);
 }
 
-void produceTokens (AddonData*);
-void consumeTokens (AddonData*);
+void produceTokens (void*);
+void consumeTokens (void*);
 
 #ifdef TOKEN_JAVASCRIPT
 // These definitions are used in the beginning of the development. The data

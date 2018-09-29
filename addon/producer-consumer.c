@@ -29,7 +29,8 @@ static void consumer (AddonData* ad) {
   }
 }
 
-void produceTokens (AddonData* ad) {
+void produceTokens (void* data) {
+  AddonData* ad = (AddonData*) data;
   while (1) {
     producer(ad);
     uv_mutex_lock(&ad->tokenConsumedMutex);
@@ -39,7 +40,8 @@ void produceTokens (AddonData* ad) {
   }
 }
 
-void consumeTokens (AddonData* ad) {
+void consumeTokens (void* data) {
+  AddonData* ad = (AddonData*) data;
   while (1) {
     consumer(ad);
     uv_mutex_lock(&ad->tokenProducedMutex);
