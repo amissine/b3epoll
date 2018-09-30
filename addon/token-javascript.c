@@ -314,7 +314,7 @@ napi_value GetTokenPrime(napi_env env, napi_callback_info info) {
   napi_value jsthis, prime_property;
   AddonData* ad;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&ad));
-  assert(is_instanceof(env, ad->thread_item_constructor, jsthis));
+  assert(is_instanceof(env, ad->token_type_constructor, jsthis));
   TokenType* token;
   assert(napi_ok == napi_unwrap(env, jsthis, (void**)&token));
   assert(napi_ok == napi_create_int32(env, 
@@ -325,16 +325,16 @@ napi_value GetTokenPrime(napi_env env, napi_callback_info info) {
 
 // Getter for the `delay` property of the `TokenType` class.
 napi_value GetTokenDelay(napi_env env, napi_callback_info info) {
-  napi_value jsthis, prime_property;
+  napi_value jsthis, property;
   AddonData* ad;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&ad));
-  assert(is_instanceof(env, ad->thread_item_constructor, jsthis));
+  assert(is_instanceof(env, ad->token_type_constructor, jsthis));
   TokenType* token;
   assert(napi_ok == napi_unwrap(env, jsthis, (void**)&token));
   assert(napi_ok == napi_create_int64(env, 
         token->theDelay, 
-        &prime_property));
-  return prime_property;
+        &property));
+  return property;
 }
 
 // Getter for the `prime` property of the `ThreadItem` class.

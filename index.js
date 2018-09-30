@@ -28,7 +28,7 @@ function onToken (token) {
 }
 
 function onItem (item) {
-  console.log('item.prime: %d', item.prime)
+  // console.log('item.prime: %d', item.prime)
   theItem = item
   setTimeout(
     () => {

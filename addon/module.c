@@ -16,6 +16,8 @@ static void addon_is_unloading(napi_env env, void* data, void* hint) {
   uv_cond_destroy(&addon_data->tokenConsuming);
   assert(napi_delete_reference(env,
                                addon_data->thread_item_constructor) == napi_ok);
+  assert(napi_delete_reference(env,
+                               addon_data->token_type_constructor) == napi_ok);
   free(data);
 }
 
@@ -25,12 +27,15 @@ static void addon_is_unloading(napi_env env, void* data, void* hint) {
 // called `napi_release_threadsafe_function()`.
 static void ThreadFinished(napi_env env, void* data, void* context) {
 
-  printf("ThreadFinished started\n"); // TODO: the onToken finalization
+  printf("ThreadFinished started\n");
 
-  (void) context;
+//  (void) context;
   AddonData* addon_data = (AddonData*)data;
   assert(uv_thread_join(&(addon_data->the_thread)) == 0);
+//  assert(uv_thread_join(&addon_data->producerThread) == 0);
+//  assert(uv_thread_join(&addon_data->consumerThread) == 0);
   addon_data->tsfn = NULL;
+//  addon_data->onToken= NULL;
 }
 
 // This binding can be called from JavaScript to start the producer-consumer
@@ -122,14 +127,14 @@ static inline napi_value bindings (
   // addon instance, define ThreadItemClass and TokenClass.
   assert(initAddonData(ad));
   // defineThreadItemClass(env, ad);
-  char* propNames[2] = { "prime", "delay" };
-  napi_callback getters[2] = { GetPrime, GetTokenDelay }, 
-                setters[2] = { NULL, NULL };
+  char *propNames[1] = { "prime" },  *propNamesTT[2] = { "prime", "delay" };
+  napi_callback getters[1] = { GetPrime },
+               gettersTT[2] = { GetTokenPrime, GetTokenDelay }, 
+               setters[2] = { NULL, NULL };
   defObj_n_props(env, ad, "ThreadItem", ThreadItemConstructor, 
       &ad->thread_item_constructor, 1, propNames, getters, setters);
-  *getters = GetTokenPrime;
   defObj_n_props(env, ad, "TokenType", TokenTypeConstructor,
-      &ad->token_type_constructor, 2, propNames, getters, setters);
+      &ad->token_type_constructor, 2, propNamesTT, gettersTT, setters);
 
   // Expose and return the bindings this addon provides.
   return bindings(env, exports, ad);
