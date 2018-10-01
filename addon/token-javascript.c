@@ -387,6 +387,7 @@ void produceTokenJavascript (TokenType* tt, AddonData* ad) {
     t = fifoOut(&ad->queue); // remove the first token from the queue
     if (t) { // if it's not NULL, copy it to the shared buffer and return
       memcpy(tt, t, sizeof(TokenType));
+      free(t);
       uv_mutex_unlock(&ad->tokenProducingMutex); 
       return;
     }
@@ -399,6 +400,7 @@ void produceTokenJavascript (TokenType* tt, AddonData* ad) {
   if (ad->js_accepts) {
     t = fifoOut(&ad->queue); // remove it from the queue,
     memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and return
+    free(t);
   }
   uv_mutex_unlock(&ad->tokenProducingMutex);
 }

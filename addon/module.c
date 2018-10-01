@@ -59,7 +59,14 @@ static void ThreadFinished (napi_env env, void* data, void* context) {
 
   assert(uv_thread_join(&ad->producerThread) == 0);
   assert(uv_thread_join(&ad->consumerThread) == 0);
-  printf("ThreadFinished returning\n");
+  
+  // Empty the queue of tokens that have not been produced.
+  struct fifo* t;
+  while ((t = fifoOut(&ad->queue)) != NULL) {
+    printf("ThreadFinished token->thePrime: %d\n", ((TokenType*)t)->thePrime);
+    free(t);
+  }
+  printf("ThreadFinished returning, ad->queue.size: %zu\n", ad->queue.size);
 }
 
 // This binding can be called from JavaScript to start the producer-consumer
@@ -150,15 +157,15 @@ static inline napi_value bindings (
   // Initialize the various members of the `AddonData` associated with this
   // addon instance, define ThreadItemClass and TokenClass.
   assert(initAddonData(ad));
-  // defineThreadItemClass(env, ad);
   char *propNames[1] = { "prime" },  *propNamesTT[2] = { "prime", "delay" };
+  napi_property_descriptor p[1], pTT[2];
   napi_callback getters[1] = { GetPrime },
                gettersTT[2] = { GetTokenPrime, GetTokenDelay }, 
                setters[2] = { NULL, NULL };
   defObj_n_props(env, ad, "ThreadItem", ThreadItemConstructor, 
-      &ad->thread_item_constructor, 1, propNames, getters, setters);
+      &ad->thread_item_constructor, 1, p, propNames, getters, setters);
   defObj_n_props(env, ad, "TokenType", TokenTypeConstructor,
-      &ad->token_type_constructor, 2, propNamesTT, gettersTT, setters);
+      &ad->token_type_constructor, 2, pTT, propNamesTT, gettersTT, setters);
 
   // Expose and return the bindings this addon provides.
   return bindings(env, exports, ad);

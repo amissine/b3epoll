@@ -23,8 +23,13 @@ class B3 {
 module.exports = B3
 
 function onToken (token) {
-  console.log('token.prime: %d, token.delay: %dµs', token.prime, token.delay)
-  addon.doneWith(token, true) // MORE tokens wanted
+  setTimeout(
+    () => {
+      console.log('token.prime: %d, token.delay: %dµs', token.prime, token.delay)
+      addon.doneWith(token, true) // MORE tokens wanted
+    },
+    100 // try 900 to test the backpressure of items
+  )
 }
 
 function onItem (item) {

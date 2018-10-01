@@ -58,11 +58,9 @@ typedef struct {
 
 static inline void defObj_n_props (napi_env env, AddonData* ad, 
     const char* utf8ClassName, napi_callback Constructor, napi_ref* constructor, 
-    size_t n,
+    size_t n, napi_property_descriptor* properties,
     char** utf8PropName, napi_callback* Getter, napi_callback* Setter) {
-  napi_property_descriptor* properties = malloc(n * sizeof(*properties));
-  assert(properties && "No memory");
-  napi_property_descriptor* p = properties; memset(p, 0, sizeof(*p));
+  napi_property_descriptor* p = properties; memset(p, 0, n * sizeof(*p));
   size_t m = n;
   while (m--) {
     p->utf8name = *utf8PropName++;
@@ -75,7 +73,6 @@ static inline void defObj_n_props (napi_env env, AddonData* ad,
   assert(napi_ok == napi_define_class(env, utf8ClassName, NAPI_AUTO_LENGTH,
         Constructor, ad, n, properties, &objType));
   assert(napi_ok == napi_create_reference(env, objType, 1, constructor));
-//  free(properties); TODO: free properties on stop
 }
 
 void produceTokens (void*);
