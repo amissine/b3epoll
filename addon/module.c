@@ -1,6 +1,6 @@
 #include "addon.h"
 
-static void addon_is_unloading(napi_env env, void* data, void* hint) {
+static void addon_is_unloading (napi_env env, void* data, void* hint) {
 
   printf("addon_is_unloading started\n");
 
@@ -25,22 +25,46 @@ static void addon_is_unloading(napi_env env, void* data, void* hint) {
 // set `addon_data->tsfn` to NULL, because the thread-safe function will be
 // cleaned up in the background in response to the secondary thread having
 // called `napi_release_threadsafe_function()`.
-static void ThreadFinished(napi_env env, void* data, void* context) {
+static void ThreadFinished (napi_env env, void* data, void* context) {
+  AddonData* ad = (AddonData*)data;
 
-  printf("ThreadFinished started\n");
+  printf("ThreadFinished started, ad->js_accepts: %s\n", 
+      ad->js_accepts ? "true" : "false");
 
-//  (void) context;
-  AddonData* addon_data = (AddonData*)data;
-  assert(uv_thread_join(&(addon_data->the_thread)) == 0);
-//  assert(uv_thread_join(&addon_data->producerThread) == 0);
-//  assert(uv_thread_join(&addon_data->consumerThread) == 0);
-  addon_data->tsfn = NULL;
-//  addon_data->onToken= NULL;
+  if (!ad->tsfn) return; // ad->onToken is being finalized
+
+  assert(uv_thread_join(&ad->the_thread) == 0);
+  ad->tsfn = NULL;
+
+  // Release the thread-safe function. This causes it to be cleaned up in the
+  // background.
+  assert(napi_release_threadsafe_function(ad->onToken,
+                                          napi_tsfn_release) == napi_ok);
+
+  uv_mutex_lock(&ad->tokenProducedMutex);
+  uv_cond_signal(&ad->tokenProduced);
+  uv_mutex_unlock(&ad->tokenProducedMutex);
+
+  uv_mutex_lock(&ad->tokenProducingMutex);
+  uv_cond_signal(&ad->tokenProducing);
+  uv_mutex_unlock(&ad->tokenProducingMutex);
+
+  uv_mutex_lock(&ad->tokenConsumedMutex);
+  uv_cond_signal(&ad->tokenConsumed);
+  uv_mutex_unlock(&ad->tokenConsumedMutex);
+
+  uv_mutex_lock(&ad->tokenConsumingMutex);
+  uv_cond_signal(&ad->tokenConsuming);
+  uv_mutex_unlock(&ad->tokenConsumingMutex);
+
+  assert(uv_thread_join(&ad->producerThread) == 0);
+  assert(uv_thread_join(&ad->consumerThread) == 0);
+  printf("ThreadFinished returning\n");
 }
 
 // This binding can be called from JavaScript to start the producer-consumer
 // pair of threads and the original thread that generates prime numbers.
-static napi_value Start(napi_env env, napi_callback_info info) {
+static napi_value Start (napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value js_cb[2], name1, name2;
   AddonData* ad;

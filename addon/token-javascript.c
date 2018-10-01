@@ -366,14 +366,22 @@ void consumeTokenJavascript (TokenType* tt, AddonData* ad) {
   // then wait until the main thread is done with the token.
   assert(napi_ok == napi_call_threadsafe_function(ad->onToken,
         tt, napi_tsfn_blocking));
-  uv_mutex_lock(&ad->tokenConsumingMutex);
-  while (tt->theDelay != 0ll) // wait for the token to be consumed
-    uv_cond_wait(&ad->tokenConsuming, &ad->tokenConsumingMutex);
-  uv_mutex_unlock(&ad->tokenConsumingMutex);
+  if (tt->theDelay != 0ll) {
+    printf("consumeTokenJavascript: wait for the token to be consumed\n");
+    uv_mutex_lock(&ad->tokenConsumingMutex);
+
+    // Wait for the token to be consumed
+    while (ad->js_accepts && tt->theDelay != 0ll)
+      uv_cond_wait(&ad->tokenConsuming, &ad->tokenConsumingMutex);
+    uv_mutex_unlock(&ad->tokenConsumingMutex);
+  }
 }
 
 void produceTokenJavascript (TokenType* tt, AddonData* ad) {
   struct fifo* t;
+  if (ad->js_accepts && ad->queue.size == 0)
+    printf("produceTokenJavascript: wait for a token from the main thread\n");
+
   uv_mutex_lock(&ad->tokenProducingMutex);
   if (ad->queue.size > 0) { // token(s) have been produced by the main thread
     t = fifoOut(&ad->queue); // remove the first token from the queue
@@ -383,11 +391,15 @@ void produceTokenJavascript (TokenType* tt, AddonData* ad) {
       return;
     }
   }
-  while (ad->queue.size == 0) // wait for a token from the main thread
+
+  // Wait for a token from the main thread
+  while (ad->js_accepts && ad->queue.size == 0)
     uv_cond_wait(&ad->tokenProducing, &ad->tokenProducingMutex);
 
-  t = fifoOut(&ad->queue); // remove it from the queue,
-  memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and return
+  if (ad->js_accepts) {
+    t = fifoOut(&ad->queue); // remove it from the queue,
+    memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and return
+  }
   uv_mutex_unlock(&ad->tokenProducingMutex);
 }
 

@@ -28,13 +28,13 @@ function onToken (token) {
 }
 
 function onItem (item) {
-  // console.log('item.prime: %d', item.prime)
   theItem = item
   setTimeout(
     () => {
+      // console.log('item.prime: %d', item.prime)
       addon.produceToken(item)
       addon.doneWith(item, true) // MORE items wanted
     },
-    200
+    400
   )
 }

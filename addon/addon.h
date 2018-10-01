@@ -53,7 +53,7 @@ typedef struct {
   napi_threadsafe_function tsfn, onToken;
   napi_ref thread_item_constructor;
   napi_ref token_type_constructor;
-  bool js_accepts;
+  volatile bool js_accepts;
 } AddonData;
 
 static inline void defObj_n_props (napi_env env, AddonData* ad, 
