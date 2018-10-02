@@ -26,12 +26,12 @@ describe('Basic B3 functionality:', () => {
     setTimeout(() => {
       assert.ok(b3.start({ consumer: { delay: 900 } }), 'b3.start(backpressure)')
       done()
-    }, 1000)
-  }).timeout(2000)
+    }, 2000)
+  }).timeout(3000)
   it('frees the unproduced tokens when stopped', done => {
     setTimeout(() => {
       assert.ok(b3.stop(), 'b3.stop(backpressure)')
       done()
-    }, 6000)
-  }).timeout(7000)
+    }, 7000)
+  }).timeout(8000)
 })
