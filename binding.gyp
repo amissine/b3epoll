@@ -1,15 +1,12 @@
 {
   "targets": [
     {
-      "target_name": "addon",
+      "target_name": "b2",
       "sources": [ 
-        "./addon/module.c", 
-        "./addon/producer-consumer.c", 
-        "./addon/token-javascript.c"
+        "./b2/module.c" 
       ],
       "defines": [
-        "NAPI_EXPERIMENTAL",
-        "TOKEN_JAVASCRIPT"
+        "NAPI_EXPERIMENTAL"
       ]
     }
   ]
