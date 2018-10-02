@@ -407,6 +407,10 @@ void produceTokenJavascript (TokenType* tt, AddonData* ad) {
 
 napi_value Start2ThreadsTokenJavascript (AddonData* ad) {
 
+  // Reset the shared buffer.
+  produceCount = 0;
+  consumeCount = 0;
+
   // Create and start the consumer thread.
   assert(uv_thread_create(&ad->consumerThread, consumeTokens, ad) == 0);
 

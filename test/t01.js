@@ -7,11 +7,8 @@ const B3 = require('../')
 var b3 = new B3()
 
 describe('Basic B3 functionality:', () => {
-  it('does not require `before(...)` to get instantiated', done => {
-    assert.object(b3, 'b3')
-    done()
-  })
   it('allows exactly one singleton instance of itself', done => {
+    assert.object(b3, 'b3')
     assert.throws(() => { var x = new B3(); return x }, 'Must throw Error')
     done()
   })
@@ -25,4 +22,16 @@ describe('Basic B3 functionality:', () => {
       done()
     }, 5000)
   }).timeout(6000)
+  it('runs again with backpressure of tokens to produce', done => {
+    setTimeout(() => {
+      assert.ok(b3.start({ consumer: { delay: 900 } }), 'b3.start(backpressure)')
+      done()
+    }, 1000)
+  }).timeout(2000)
+  it('frees the unproduced tokens when stopped', done => {
+    setTimeout(() => {
+      assert.ok(b3.stop(), 'b3.stop(backpressure)')
+      done()
+    }, 6000)
+  }).timeout(7000)
 })

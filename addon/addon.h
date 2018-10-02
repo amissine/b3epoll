@@ -46,7 +46,7 @@ typedef struct {
 #ifdef TOKEN_JAVASCRIPT
   uv_mutex_t tokenProducingMutex, tokenConsumingMutex;
   uv_cond_t tokenProducing, tokenConsuming;
-  struct fifo queue; // produced tokens
+  struct fifo queue; // tokens to produce
 #endif // TOKEN_JAVASCRIPT  
   uv_cond_t tokenProduced, tokenConsumed;
   uv_thread_t the_thread, producerThread, consumerThread;
@@ -75,6 +75,7 @@ static inline void defObj_n_props (napi_env env, AddonData* ad,
   assert(napi_ok == napi_create_reference(env, objType, 1, constructor));
 }
 
+extern volatile unsigned int produceCount, consumeCount;
 void produceTokens (void*);
 void consumeTokens (void*);
 

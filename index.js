@@ -3,6 +3,7 @@
 const addon = require('bindings')('addon')
 var b3Count = 0
 var theItem
+var options
 
 class B3 {
   constructor () {
@@ -10,7 +11,9 @@ class B3 {
       throw new Error('Multiple instances of B3 are not allowed')
     }
   }
-  start () {
+  start (opts) {
+    options = opts || { consumer: { delay: 100 } }
+    console.log('options: %O', options)
     addon.start(onToken, onItem)
     return true
   }
@@ -25,10 +28,10 @@ module.exports = B3
 function onToken (token) {
   setTimeout(
     () => {
-      console.log('token.prime: %d, token.delay: %dµs', token.prime, token.delay)
+      console.log('token.prime: %d, token.delay: %d µs', token.prime, token.delay)
       addon.doneWith(token, true) // MORE tokens wanted
     },
-    100 // try 900 to test the backpressure of items
+    options.consumer.delay
   )
 }
 
