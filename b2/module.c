@@ -1,26 +1,14 @@
-/*
-#include "addon.h"
+#include "b2.h"
 
-static void addon_is_unloading (napi_env env, void* data, void* hint) {
+static void freeModuleData (napi_env env, void* data, void* hint) {
 
-  printf("addon_is_unloading started\n");
+  printf("freeModuleData started\n");
 
-  AddonData* addon_data = (AddonData*)data;
-  uv_mutex_destroy(&addon_data->check_status_mutex);
-  uv_mutex_destroy(&addon_data->tokenProducedMutex);
-  uv_mutex_destroy(&addon_data->tokenProducingMutex);
-  uv_mutex_destroy(&addon_data->tokenConsumedMutex);
-  uv_mutex_destroy(&addon_data->tokenConsumingMutex);
-  uv_cond_destroy(&addon_data->tokenProduced);
-  uv_cond_destroy(&addon_data->tokenProducing);
-  uv_cond_destroy(&addon_data->tokenConsumed);
-  uv_cond_destroy(&addon_data->tokenConsuming);
-  assert(napi_delete_reference(env,
-                               addon_data->thread_item_constructor) == napi_ok);
-  assert(napi_delete_reference(env,
-                               addon_data->token_type_constructor) == napi_ok);
+  ModuleData* md = (ModuleData*) data;
+  assert(napi_ok == napi_delete_reference(env, md->tt_constructor));
   free(data);
 }
+/*
 
 // When the thread is finished we join it to prevent memory leaks. We can safely
 // set `addon_data->tsfn` to NULL, because the thread-safe function will be
@@ -109,22 +97,25 @@ static napi_value Start (napi_env env, napi_callback_info info) {
   // Create the producer-consumer pair of threads.
   return Start2Threads(ad);
 }
+*/
 
-static inline int initAddonData (AddonData* ad) {
-  fifoInit(&ad->queue);
-  return (uv_mutex_init(&ad->check_status_mutex) == 0) &&
-    (uv_mutex_init(&ad->tokenProducedMutex) == 0) &&
-    (uv_mutex_init(&ad->tokenConsumedMutex) == 0) &&
-    (uv_mutex_init(&ad->tokenProducingMutex) == 0) &&
-    (uv_mutex_init(&ad->tokenConsumingMutex) == 0) &&
-    (uv_cond_init(&ad->tokenProduced) == 0) &&
-    (uv_cond_init(&ad->tokenConsumed) == 0) &&
-    (uv_cond_init(&ad->tokenProducing) == 0) &&
-    (uv_cond_init(&ad->tokenConsuming) == 0);
+static inline int initModuleData (ModuleData* md) {
+  fifoInit(&md->b2instances);
+ 
+  // Define the token type. The md->tt_constructor napi_ref will be deleted
+  // during the 'freeModuleData' call.
+  char* propNamesTT[3] = { "sid", "message", "delay" };
+  napi_property_descriptor pTT[3];
+  napi_callback settersTT[3] = { NULL, NULL, NULL },
+               gettersTT[3] = { GetTokenSid, GetTokenMessage, GetTokenDelay }; 
+  defObj_n_props(env, md, "TokenType", TokenTypeConstructor,
+      &md->tt_constructor, 3, pTT, propNamesTT, gettersTT, settersTT);
+
+  return TRUE;
 }
 
 static inline napi_value bindings (
-    napi_env env, napi_value exports, AddonData* ad) {
+    napi_env env, napi_value exports, ModuleData* md) {
   napi_property_descriptor export_properties[] = {
     { "start", 0, Start, 0, 0, 0, napi_default, ad },
     { "doneWith", 0, RegisterReturnValue, 0, 0, 0, napi_default, ad },
@@ -137,8 +128,8 @@ static inline napi_value bindings (
                                 export_properties) == napi_ok);
   return exports;
 }
-*/
-// Initialize an instance of this addon. This function may be called multiple
+
+// Initialize an instance of this module. This function may be called multiple
 // times if multiple instances of Node.js are running on multiple threads, or if
 // there are multiple Node.js contexts running on the same thread. The return
 // value and the formal parameters in comments remind us that the function body
@@ -147,27 +138,14 @@ static inline napi_value bindings (
 // `napi_value`.
 /*napi_value*/ NAPI_MODULE_INIT(/*napi_env env, napi_value exports*/) {
   // Create the native data that will be associated with this instance of the
-  // addon.
-  AddonData* ad = memset(malloc(sizeof(*ad)), 0, sizeof(*ad));
+  // module.
+  ModuleData* md = memset(malloc(sizeof(*md)), 0, sizeof(*md));
 
-  // Attach the addon data to the exports object to ensure that they are
-  // destroyed together.
-  assert(napi_wrap(
-        env, exports, ad, addon_is_unloading, NULL, NULL) == napi_ok);
-
-  // Initialize the various members of the `AddonData` associated with this
-  // addon instance, define ThreadItemClass and TokenClass.
-  assert(initAddonData(ad));
-  char *propNames[1] = { "prime" },  *propNamesTT[2] = { "prime", "delay" };
-  napi_property_descriptor p[1], pTT[2];
-  napi_callback getters[1] = { GetPrime },
-               gettersTT[2] = { GetTokenPrime, GetTokenDelay }, 
-               setters[2] = { NULL, NULL };
-  defObj_n_props(env, ad, "ThreadItem", ThreadItemConstructor, 
-      &ad->thread_item_constructor, 1, p, propNames, getters, setters);
-  defObj_n_props(env, ad, "TokenType", TokenTypeConstructor,
-      &ad->token_type_constructor, 2, pTT, propNamesTT, gettersTT, setters);
-
+  // Attach the module data to the exports object to ensure that they are
+  // destroyed together. Initialize the module data.
+  assert(napi_ok == napi_wrap(env, exports, md, freeModuleData, 0, 0));
+  assert(initModuleData(md));
+  
   // Expose and return the bindings this addon provides.
-  return bindings(env, exports, ad);
+  return bindings(env, exports, md);
 }
