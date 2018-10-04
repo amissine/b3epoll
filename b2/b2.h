@@ -85,6 +85,7 @@ static inline void initTokenType (TokenType* tt, char* theMessage) {
   tt->theMessage[i0] = '\0';
 } 
 
+napi_value newB2 (napi_env env, napi_callback_info info);
 /*
 typedef struct {
   uv_mutex_t check_status_mutex, tokenProducedMutex, tokenConsumedMutex;

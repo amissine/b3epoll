@@ -5,7 +5,7 @@
 const assert = require('assert-plus')
 const B3 = require('../b3')
 var b3 = new B3()
-var count = 0
+var count = 1
 
 describe('Basic B3 functionality:', () => {
   it('is bidirectional', function (done) {

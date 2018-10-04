@@ -99,7 +99,60 @@ static napi_value Start (napi_env env, napi_callback_info info) {
 }
 */
 
-static inline int initModuleData (ModuleData* md) {
+// Constructor for instances of the `TokenType` class. This doesn't need to do
+// anything since all we want the class for is to be able to type-check
+// JavaScript objects that carry within them a pointer to a native `TokenType`
+// structure.
+napi_value TokenTypeConstructor (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+static bool is_instanceof (napi_env env, napi_ref cons_ref, napi_value value) {
+  bool validate;
+  napi_value constructor;
+  assert(napi_ok == napi_get_reference_value(env, cons_ref, &constructor));
+  assert(napi_ok == napi_instanceof(env, value, constructor, &validate));
+  return validate;
+}
+
+// Getter for the `sid` property of the `TokenType` object.
+static napi_value GetTokenSid(napi_env env, napi_callback_info info) {
+  napi_value jsthis, property;
+  ModuleData* md;
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
+  assert(is_instanceof(env, md->tt_constructor, jsthis));
+  struct fifo *tt_this;
+  assert(napi_ok == napi_unwrap(env, jsthis, (void**)&tt_this));
+  assert(napi_ok == napi_create_uint32(env, tt_this->sid, &property));
+  return property;
+}
+
+// Getter for the `message` property of the `TokenType` object.
+static napi_value GetTokenMessage(napi_env env, napi_callback_info info) {
+  napi_value jsthis, property;
+  ModuleData* md;
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
+  assert(is_instanceof(env, md->tt_constructor, jsthis));
+  TokenType* token;
+  assert(napi_ok == napi_unwrap(env, jsthis, (void**)&token));
+  assert(napi_ok == napi_create_string_utf8(
+        env, token->theMessage, NAPI_AUTO_LENGTH, &property));
+  return property;
+}
+
+// Getter for the `delay` property of the `TokenType` object.
+static napi_value GetTokenDelay(napi_env env, napi_callback_info info) {
+  napi_value jsthis, property;
+  ModuleData* md;
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
+  assert(is_instanceof(env, md->tt_constructor, jsthis));
+  TokenType* token;
+  assert(napi_ok == napi_unwrap(env, jsthis, (void**)&token));
+  assert(napi_ok == napi_create_int64(env, token->theDelay, &property));
+  return property;
+}
+
+static inline int initModuleData (napi_env env, ModuleData* md) {
   fifoInit(&md->b2instances);
  
   // Define the token type. The md->tt_constructor napi_ref will be deleted
@@ -116,16 +169,10 @@ static inline int initModuleData (ModuleData* md) {
 
 static inline napi_value bindings (
     napi_env env, napi_value exports, ModuleData* md) {
-  napi_property_descriptor export_properties[] = {
-    { "start", 0, Start, 0, 0, 0, napi_default, ad },
-    { "doneWith", 0, RegisterReturnValue, 0, 0, 0, napi_default, ad },
-    { "produceToken", 0, NotifyTokenProducer, 0, 0, 0, napi_default, ad }
+  napi_property_descriptor p[] = {
+    { "newB2", 0, newB2, 0, 0, 0, napi_default, md }
   };
-  size_t count = sizeof(export_properties) / sizeof(export_properties[0]);
-  assert(napi_define_properties(env,
-                                exports,
-                                count,
-                                export_properties) == napi_ok);
+  assert(napi_ok == napi_define_properties(env, exports, 1, p));
   return exports;
 }
 
@@ -144,7 +191,7 @@ static inline napi_value bindings (
   // Attach the module data to the exports object to ensure that they are
   // destroyed together. Initialize the module data.
   assert(napi_ok == napi_wrap(env, exports, md, freeModuleData, 0, 0));
-  assert(initModuleData(md));
+  assert(initModuleData(env, md));
   
   // Expose and return the bindings this addon provides.
   return bindings(env, exports, md);
