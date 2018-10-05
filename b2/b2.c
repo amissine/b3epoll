@@ -3,9 +3,9 @@
 // When the JavaScript side calls newB2 (for example, as follows:
 //
 //   var b2pc = b2.newB2(producerConfigData, consumerConfigData)
-//   b2pc.consumer.on('message', msg => {
-//     console.log(msg)
-//     b2pc.doneWith(msg)
+//   b2pc.consumer.on('token', t => {
+//     console.log(t)
+//     b2pc.consumer.doneWith(t)
 //   })
 //   b2pc.consumer.on('close', () => {
 //     console.log('The b2pc threads are stopped now.')

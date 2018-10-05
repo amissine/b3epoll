@@ -5,6 +5,9 @@ static void freeModuleData (napi_env env, void* data, void* hint) {
   printf("freeModuleData started\n");
 
   ModuleData* md = (ModuleData*) data;
+  assert(napi_ok == napi_delete_reference(env, md->b2t_constructor));
+  assert(napi_ok == napi_delete_reference(env, md->pt_constructor));
+  assert(napi_ok == napi_delete_reference(env, md->ct_constructor));
   assert(napi_ok == napi_delete_reference(env, md->tt_constructor));
   free(data);
 }
@@ -99,6 +102,58 @@ static napi_value Start (napi_env env, napi_callback_info info) {
 }
 */
 
+// Constructor for instances of the `B2Type` class. This doesn't need to do
+// anything since all we want the class for is to be able to type-check
+// JavaScript objects that carry within them a pointer to a native `B2Type`
+// structure.
+napi_value B2TypeConstructor (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+static napi_value B2T_Open (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+static napi_value B2T_Close (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+static napi_value B2T_Producer (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+static napi_value B2T_Consumer (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+// Constructor for instances of the `ProducerType` class. This doesn't need to do
+// anything since all we want the class for is to be able to type-check
+// JavaScript objects that carry within them a pointer to a native `ProducerType`
+// structure.
+napi_value ProducerTypeConstructor (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+static napi_value PT_Send (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+// Constructor for instances of the `ConsumerType` class. This doesn't need to do
+// anything since all we want the class for is to be able to type-check
+// JavaScript objects that carry within them a pointer to a native `ConsumerType`
+// structure.
+napi_value ConsumerTypeConstructor (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+static napi_value CT_On (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
+static napi_value CT_DoneWith (napi_env env, napi_callback_info info) {
+  return NULL;
+}
+
 // Constructor for instances of the `TokenType` class. This doesn't need to do
 // anything since all we want the class for is to be able to type-check
 // JavaScript objects that carry within them a pointer to a native `TokenType`
@@ -107,16 +162,8 @@ napi_value TokenTypeConstructor (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-static bool is_instanceof (napi_env env, napi_ref cons_ref, napi_value value) {
-  bool validate;
-  napi_value constructor;
-  assert(napi_ok == napi_get_reference_value(env, cons_ref, &constructor));
-  assert(napi_ok == napi_instanceof(env, value, constructor, &validate));
-  return validate;
-}
-
 // Getter for the `sid` property of the `TokenType` object.
-static napi_value GetTokenSid(napi_env env, napi_callback_info info) {
+static napi_value GetTokenSid (napi_env env, napi_callback_info info) {
   napi_value jsthis, property;
   ModuleData* md;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
@@ -128,7 +175,7 @@ static napi_value GetTokenSid(napi_env env, napi_callback_info info) {
 }
 
 // Getter for the `message` property of the `TokenType` object.
-static napi_value GetTokenMessage(napi_env env, napi_callback_info info) {
+static napi_value GetTokenMessage (napi_env env, napi_callback_info info) {
   napi_value jsthis, property;
   ModuleData* md;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
@@ -141,7 +188,7 @@ static napi_value GetTokenMessage(napi_env env, napi_callback_info info) {
 }
 
 // Getter for the `delay` property of the `TokenType` object.
-static napi_value GetTokenDelay(napi_env env, napi_callback_info info) {
+static napi_value GetTokenDelay (napi_env env, napi_callback_info info) {
   napi_value jsthis, property;
   ModuleData* md;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
@@ -152,19 +199,44 @@ static napi_value GetTokenDelay(napi_env env, napi_callback_info info) {
   return property;
 }
 
-static inline int initModuleData (napi_env env, ModuleData* md) {
+static inline void initModuleData (napi_env env, ModuleData* md) {
   fifoInit(&md->b2instances);
  
   // Define the token type. The md->tt_constructor napi_ref will be deleted
   // during the 'freeModuleData' call.
   char* propNamesTT[3] = { "sid", "message", "delay" };
   napi_property_descriptor pTT[3];
-  napi_callback settersTT[3] = { NULL, NULL, NULL },
+  napi_callback methodsTT[3] = { NULL, NULL, NULL },
                gettersTT[3] = { GetTokenSid, GetTokenMessage, GetTokenDelay }; 
   defObj_n_props(env, md, "TokenType", TokenTypeConstructor,
-      &md->tt_constructor, 3, pTT, propNamesTT, gettersTT, settersTT);
+      &md->tt_constructor, 3, pTT, propNamesTT, gettersTT, methodsTT);
 
-  return TRUE;
+  // Define the bounded buffer type. The md->b2t_constructor napi_ref 
+  // will be deleted during the 'freeModuleData' call.
+  char* propNamesB2T[4] = { "producer", "consumer", "open", "close" };
+  napi_property_descriptor pB2T[4];
+  napi_callback methodsB2T[4] = { NULL, NULL, B2T_Open, B2T_Close },
+                gettersB2T[4] = { B2T_Producer, B2T_Consumer, NULL, NULL };
+  defObj_n_props(env, md, "B2Type", B2TypeConstructor,
+      &md->b2t_constructor, 4, pB2T, propNamesB2T, gettersB2T, methodsB2T);
+
+  // Define the producer type. The md->pt_constructor napi_ref will be deleted
+  // during the 'freeModuleData' call.
+  char* propNamesPT[1] = { "send" };
+  napi_property_descriptor pPT[1];
+  napi_callback methodsPT[1] = { PT_Send },
+                gettersPT[1] = { NULL };
+  defObj_n_props(env, md, "ProducerType", ProducerTypeConstructor,
+      &md->pt_constructor, 1, pPT, propNamesPT, gettersPT, methodsPT);
+
+  // Define the consumer type. The md->ct_constructor napi_ref will be deleted
+  // during the 'freeModuleData' call.
+  char* propNamesCT[2] = { "on", "doneWith" };
+  napi_property_descriptor pCT[2];
+  napi_callback methodsCT[2] = { CT_On, CT_DoneWith },
+                gettersCT[2] = { NULL, NULL };
+  defObj_n_props(env, md, "ConsumerType", ConsumerTypeConstructor,
+      &md->ct_constructor, 2, pCT, propNamesCT, gettersCT, methodsCT);
 }
 
 static inline napi_value bindings (
@@ -191,7 +263,7 @@ static inline napi_value bindings (
   // Attach the module data to the exports object to ensure that they are
   // destroyed together. Initialize the module data.
   assert(napi_ok == napi_wrap(env, exports, md, freeModuleData, 0, 0));
-  assert(initModuleData(env, md));
+  initModuleData(env, md);
   
   // Expose and return the bindings this addon provides.
   return bindings(env, exports, md);

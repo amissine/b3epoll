@@ -32,9 +32,7 @@ static inline bool fifoEmpty (struct fifo* q) {
 // For any given element t of the non-empty fifo queue q,
 //
 //   t->sid + 1 == t->out->sid AND
-//
 //   q->out->sid < t->sid if q->out != t AND
-//
 //   q->in->sid > t->sid if q->in != t
 //
 
@@ -43,21 +41,32 @@ static inline bool fifoEmpty (struct fifo* q) {
 // co-exist.
 typedef struct {
   struct fifo b2instances;
+  napi_ref b2t_constructor; // B2Type
+  napi_ref pt_constructor;  // ProducerType
+  napi_ref ct_constructor;  // ConsumerType
   napi_ref tt_constructor; // RESTRICTION: even though this implementation supports
   // multiple b2 instances, they all must operate on the same TokenType.
 } ModuleData;
 
+static inline bool is_instanceof (napi_env env, napi_ref cons_ref, napi_value v) {
+  bool validate;
+  napi_value constructor;
+  assert(napi_ok == napi_get_reference_value(env, cons_ref, &constructor));
+  assert(napi_ok == napi_instanceof(env, v, constructor, &validate));
+  return validate;
+}
+
 static inline void defObj_n_props (napi_env env, ModuleData* md, 
     const char* utf8ClassName, napi_callback Constructor, napi_ref* constructor, 
     size_t n, napi_property_descriptor* properties, // [n]
-    char** utf8PropName, napi_callback* Getter, napi_callback* Setter) {
+    char** utf8PropName, napi_callback* Getter, napi_callback* Method) {
   napi_property_descriptor* p = properties; memset(p, 0, n * sizeof(*p));
   size_t m = n;
   while (m--) {
     p->utf8name = *utf8PropName++;
     p->getter = *Getter++;
-    p->setter = *Setter++;
-    p->attributes = napi_enumerable;
+    p->method = *Method++;
+    p->attributes = p->method ? napi_default : napi_enumerable;
     p++->data = md;
   }
   napi_value objType;
