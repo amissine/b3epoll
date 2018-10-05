@@ -1,5 +1,19 @@
 #include "b2.h"
 
+static inline napi_value newInstance (napi_env env, napi_ref c, void* data, 
+    napi_finalize finalize_cb, void* finalize_hint) {
+  napi_value constructor, result;
+
+  assert(napi_ok == napi_get_reference_value(env, c, &constructor));
+  assert(napi_ok == napi_new_instance(env, constructor, 0, 0, &result));
+  assert(napi_ok == napi_wrap(env, result, data, 
+        finalize_cb, finalize_hint, 0));
+  return result;
+}
+
+static void freeB2 () {
+}
+
 // When the JavaScript side calls newB2 (for example, as follows:
 //
 //   var b2pc = b2.newB2(producerConfigData, consumerConfigData)
@@ -22,10 +36,11 @@ napi_value newB2 (napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value argv[2];
   ModuleData* md;
+  struct B2 *structB2;
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, 0, (void*)&md));
 
-  return NULL; // TODO: Fixme
+  return newInstance(env, md->b2t_constructor, structB2, freeB2, 0);
 }
 /*
 #define REPORT_EVERY 1000
