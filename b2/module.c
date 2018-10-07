@@ -119,11 +119,28 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
 }
 
 static napi_value B2T_Producer (napi_env env, napi_callback_info info) {
+
+  printf("B2T_Producer started\n");
+
   return NULL;
 }
 
 static napi_value B2T_Consumer (napi_env env, napi_callback_info info) {
-  return NULL;
+  napi_value thisB2, consumer = NULL;
+  ModuleData* md;
+  struct B2 * b2;
+
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &thisB2, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, thisB2, (void*)&b2));
+  if (!b2->consumer.initialized) { // initialize the consumer
+    consumer = newInstance(env, md->ct_constructor, &b2->consumer, 0, 0);
+    b2->consumer.initialized = TRUE;
+  }
+
+  printf("B2T_Consumer b2->b2t_this.sid: %u b2->consumer.initialized: %u\n",
+      b2->b2t_this.sid, b2->consumer.initialized);
+
+  return consumer;
 }
 
 // Constructor for instances of the `ProducerType` class. This doesn't need to do
@@ -147,6 +164,9 @@ napi_value ConsumerTypeConstructor (napi_env env, napi_callback_info info) {
 }
 
 static napi_value CT_On (napi_env env, napi_callback_info info) {
+
+  printf("CT_On started\n");
+
   return NULL;
 }
 
@@ -237,6 +257,48 @@ static inline void initModuleData (napi_env env, ModuleData* md) {
                 gettersCT[2] = { NULL, NULL };
   defObj_n_props(env, md, "ConsumerType", ConsumerTypeConstructor,
       &md->ct_constructor, 2, pCT, propNamesCT, gettersCT, methodsCT);
+}
+
+static void freeB2native (napi_env env, void* data, void* hint) {
+  ModuleData* md = (ModuleData*)hint;
+  struct B2 * b2 = (struct B2 *)data;
+  struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
+  struct fifo * p = q->out, * r = q->in;
+  p->in = r; r->out = p; queue->size--;
+
+  printf("freeB2native queue->size: %zu\n", queue->size);
+
+  free(data);
+}
+
+// When the JavaScript side calls newB2 (for example, as follows:
+//
+//   var b2 = B2.newB2(producerConfigData, consumerConfigData)
+//   b2.consumer.on('token', t => {
+//     console.log(t)
+//     b2.consumer.doneWith(t)
+//   })
+//   b2.consumer.on('close', () => {
+//     console.log('The b2 threads are stopped now.')
+//   })
+//   b2.open()
+//   b2.producer.send('Hello World')
+//   b2.close()
+//
+// ), this function constructs the shared buffer and binds the producer/consumer
+// pair to it. It returns back the JavaScript object that can be used to 
+// start and stop the producer/consumer pair of threads, and to send and receive
+// messages between the producer and the consumer.
+napi_value newB2 (napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2], b2;
+  ModuleData* md;
+  struct B2 *structB2;
+
+  assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, 0, (void*)&md));
+  structB2 = newB2native(env, argc, argv, md);
+  b2 = newInstance(env, md->b2t_constructor, structB2, freeB2native, md);
+  return b2;
 }
 
 static inline napi_value bindings (

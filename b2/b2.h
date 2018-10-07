@@ -40,13 +40,38 @@ static inline bool fifoEmpty (struct fifo* q) {
 // global static variables, while allowing multiple instances of the module to
 // co-exist.
 typedef struct {
-  struct fifo b2instances;
+  struct fifo b2instances; // of type struct B2
   napi_ref b2t_constructor; // B2Type
   napi_ref pt_constructor;  // ProducerType
   napi_ref ct_constructor;  // ConsumerType
   napi_ref tt_constructor; // RESTRICTION: even though this implementation supports
   // multiple b2 instances, they all must operate on the same TokenType.
 } ModuleData;
+
+struct Producer {
+  struct fifo tokens2produce;
+};
+
+struct Consumer {
+  napi_threadsafe_function onToken, onClose;
+  bool initialized;
+};
+
+struct B2 {
+  struct fifo b2t_this;
+  uv_thread_t producerThread, consumerThread;
+  uv_cond_t tokenProduced, tokenConsumed, tokenProducing, tokenConsuming;
+  uv_mutex_t tokenProducedMutex, tokenConsumedMutex,
+             tokenProducingMutex, tokenConsumingMutex;
+  struct Producer producer;
+  struct Consumer consumer;
+};
+
+static inline bool is_undefined (napi_env env, napi_value v) {
+  napi_valuetype result;
+  assert(napi_ok == napi_typeof(env, v, &result));
+  return result == napi_undefined;
+}
 
 static inline bool is_instanceof (napi_env env, napi_ref cons_ref, napi_value v) {
   bool validate;
@@ -75,6 +100,30 @@ static inline void defObj_n_props (napi_env env, ModuleData* md,
   assert(napi_ok == napi_create_reference(env, objType, 1, constructor));
 }
 
+static inline napi_value newInstance (napi_env env, napi_ref c, void* data, 
+    napi_finalize finalize_cb, void* finalize_hint) {
+  napi_value constructor, result;
+
+  assert(napi_ok == napi_get_reference_value(env, c, &constructor));
+  assert(napi_ok == napi_new_instance(env, constructor, 0, 0, &result));
+  assert(napi_ok == napi_wrap(env, result, data, 
+        finalize_cb, finalize_hint, 0));
+  return result;
+}
+
+static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* argv, 
+    ModuleData* md) {
+  if (argc == 2 && is_undefined(env, *argv++) && is_undefined(env, *argv)) {
+    printf("newB2native: no config data, using defaults");
+  }
+  struct B2 * b2 = (struct B2 *)memset(malloc(sizeof(*b2)), 0, sizeof(*b2));
+  fifoIn(&md->b2instances, &b2->b2t_this);
+
+  printf("; b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+
+  return b2;
+}
+
 // The data in the shared buffer.
 typedef struct {
   struct fifo tt_this;
@@ -94,7 +143,6 @@ static inline void initTokenType (TokenType* tt, char* theMessage) {
   tt->theMessage[i0] = '\0';
 } 
 
-napi_value newB2 (napi_env env, napi_callback_info info);
 /*
 typedef struct {
   uv_mutex_t check_status_mutex, tokenProducedMutex, tokenConsumedMutex;
