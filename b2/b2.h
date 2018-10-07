@@ -54,7 +54,7 @@ struct Producer {
 
 struct Consumer {
   napi_threadsafe_function onToken, onClose;
-  bool initialized;
+  napi_value this;
 };
 
 struct B2 {

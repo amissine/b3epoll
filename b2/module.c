@@ -126,21 +126,19 @@ static napi_value B2T_Producer (napi_env env, napi_callback_info info) {
 }
 
 static napi_value B2T_Consumer (napi_env env, napi_callback_info info) {
-  napi_value thisB2, consumer = NULL;
+  napi_value thisB2;
   ModuleData* md;
   struct B2 * b2;
 
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &thisB2, (void*)&md));
   assert(napi_ok == napi_unwrap(env, thisB2, (void*)&b2));
-  if (!b2->consumer.initialized) { // initialize the consumer
-    consumer = newInstance(env, md->ct_constructor, &b2->consumer, 0, 0);
-    b2->consumer.initialized = TRUE;
-  }
+  if (!b2->consumer.this)
+    b2->consumer.this = newInstance(env, md->ct_constructor, &b2->consumer, 0, 0);
 
-  printf("B2T_Consumer b2->b2t_this.sid: %u b2->consumer.initialized: %u\n",
-      b2->b2t_this.sid, b2->consumer.initialized);
+  printf("B2T_Consumer b2->b2t_this.sid: %u\n",
+      b2->b2t_this.sid);
 
-  return consumer;
+  return b2->consumer.this;
 }
 
 // Constructor for instances of the `ProducerType` class. This doesn't need to do
@@ -283,7 +281,7 @@ static void freeB2native (napi_env env, void* data, void* hint) {
 //   })
 //   b2.open()
 //   b2.producer.send('Hello World')
-//   b2.close()
+//   setTimeout(() => b2.close(), 500)
 //
 // ), this function constructs the shared buffer and binds the producer/consumer
 // pair to it. It returns back the JavaScript object that can be used to 
