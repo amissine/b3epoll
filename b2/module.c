@@ -126,19 +126,18 @@ static napi_value B2T_Producer (napi_env env, napi_callback_info info) {
 }
 
 static napi_value B2T_Consumer (napi_env env, napi_callback_info info) {
-  napi_value thisB2;
+  napi_value this, consumer;
   ModuleData* md;
   struct B2 * b2;
 
-  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &thisB2, (void*)&md));
-  assert(napi_ok == napi_unwrap(env, thisB2, (void*)&b2));
-  if (!b2->consumer.this)
-    b2->consumer.this = newInstance(env, md->ct_constructor, &b2->consumer, 0, 0);
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
+  consumer = newInstance(env, md->ct_constructor, b2, 0, 0);
 
   printf("B2T_Consumer b2->b2t_this.sid: %u\n",
       b2->b2t_this.sid);
 
-  return b2->consumer.this;
+  return consumer;
 }
 
 // Constructor for instances of the `ProducerType` class. This doesn't need to do
@@ -162,8 +161,15 @@ napi_value ConsumerTypeConstructor (napi_env env, napi_callback_info info) {
 }
 
 static napi_value CT_On (napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2], this;
+  ModuleData* md;
+  struct B2 * b2;
 
-  printf("CT_On started\n");
+  assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, &this, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
+
+  printf("CT_On b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
 
   return NULL;
 }
