@@ -8,9 +8,10 @@ class B3 {
     var b2lr = B2.newB2(left, right)
     var b2rl = B2.newB2(right, left)
     var b2lrConsumer = b2lr.consumer
-    b3Count++
+    this.count = b3Count++
 
-    console.log('%d %O %O', b3Count, b2rl, b2lrConsumer) // b2rl for lint
+    console.log('B3 this.count: %d %O %O',
+      this.count, b2rl, b2lrConsumer) // b2rl for lint
     b2lrConsumer.on('token', t => {
       console.log('%O', t)
       b2lrConsumer.doneWith(t)
@@ -18,6 +19,9 @@ class B3 {
     b2lrConsumer.on('close', () => {
       console.log('The b2lr threads are stopped now.')
     })
+  }
+  close () {
+    console.log('close B3 this.count: %d', this.count)
   }
 }
 module.exports = B3

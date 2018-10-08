@@ -58,6 +58,7 @@ struct Consumer {
 
 struct B2 {
   struct fifo b2t_this;
+  ModuleData* md;
   uv_thread_t producerThread, consumerThread;
   uv_cond_t tokenProduced, tokenConsumed, tokenProducing, tokenConsuming;
   uv_mutex_t tokenProducedMutex, tokenConsumedMutex,
@@ -117,6 +118,7 @@ static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* ar
   }
   struct B2 * b2 = (struct B2 *)memset(malloc(sizeof(*b2)), 0, sizeof(*b2));
   fifoIn(&md->b2instances, &b2->b2t_this);
+  b2->md = md;
 
   printf("; b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
 

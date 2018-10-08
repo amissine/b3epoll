@@ -160,17 +160,73 @@ napi_value ConsumerTypeConstructor (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+static void finalizeOnClose (napi_env env, void* data, void* context) {
+  struct B2 * b2 = (struct B2 *)data;
+
+  printf("finalizeOnClose b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+
+}
+
+static void finalizeOnToken (napi_env env, void* data, void* context) {
+  struct B2 * b2 = (struct B2 *)data;
+
+  printf("finalizeOnToken b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+
+}
+
+// This function is responsible for converting the native data coming in from
+// the consumer thread to JavaScript values, and for calling the JavaScript
+// function.
+void CallJs_onToken(napi_env env, napi_value js_cb, void* context, void* data) {
+  struct B2 * b2 = (struct B2 *)context;
+  napi_value constructor;
+  napi_value undefined, argv;
+
+  // Retrieve the JavaScript `undefined` value. This will serve as the `this`
+  // value for the function call.
+  assert(napi_get_undefined(env, &undefined) == napi_ok);
+    
+  // Retrieve the constructor for the JavaScript class from which the item
+  // holding the native data will be constructed.
+  assert(napi_ok == napi_get_reference_value(
+        env, b2->md->tt_constructor, &constructor));
+
+  // Construct a new instance of the JavaScript class to hold the native item.
+  assert(napi_ok == napi_new_instance(env, constructor, 0, 0, &argv));
+
+  // Associate the native token with the newly constructed JavaScript object.
+  assert(napi_ok == napi_wrap(env, argv, data, 0, 0, 0));
+
+  // Call the JavaScript function with the token wrapped into an instance of
+  // the JavaScript `TokenType` class.
+  assert(napi_ok == napi_call_function(env, undefined, js_cb, 1, &argv, 0));
+}
+
 static napi_value CT_On (napi_env env, napi_callback_info info) {
   size_t argc = 2;
-  napi_value argv[2], this;
+  napi_value argv[2], this, nameT, nameC;
   ModuleData* md;
   struct B2 * b2;
+  char event[6], descT[] = "b2 token consumer", descC[] = "b2 stop callback";
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
+  assert(napi_ok == napi_get_value_string_utf8(env, argv[0], event, 6, &argc));
 
-  printf("CT_On b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+  printf("CT_On b2->b2t_this.sid: %u, event: %s\n", b2->b2t_this.sid, event);
 
+  if (strcmp("token", event) == 0) { // create the onToken tsfn
+    assert(napi_ok == napi_create_string_utf8(
+          env, descT, NAPI_AUTO_LENGTH, &nameT));
+    assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameT,
+          0, 1, b2, finalizeOnToken, b2, CallJs_onToken, &b2->consumer.onToken));
+  }
+  else { // create the onClose tsfn
+    assert(napi_ok == napi_create_string_utf8(
+          env, descC, NAPI_AUTO_LENGTH, &nameC));
+    assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameC,
+          0, 1, b2, finalizeOnClose, b2, 0, &b2->consumer.onClose));
+  }
   return NULL;
 }
 
@@ -295,14 +351,14 @@ static void freeB2native (napi_env env, void* data, void* hint) {
 // messages between the producer and the consumer.
 napi_value newB2 (napi_env env, napi_callback_info info) {
   size_t argc = 2;
-  napi_value argv[2], b2;
+  napi_value argv[2], this;
   ModuleData* md;
-  struct B2 *structB2;
+  struct B2 *b2;
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, 0, (void*)&md));
-  structB2 = newB2native(env, argc, argv, md);
-  b2 = newInstance(env, md->b2t_constructor, structB2, freeB2native, md);
-  return b2;
+  b2 = newB2native(env, argc, argv, md);
+  this = newInstance(env, md->b2t_constructor, b2, freeB2native, md);
+  return this;
 }
 
 static inline napi_value bindings (
