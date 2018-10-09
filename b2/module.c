@@ -111,10 +111,98 @@ napi_value B2TypeConstructor (napi_env env, napi_callback_info info) {
 }
 
 static napi_value B2T_Open (napi_env env, napi_callback_info info) {
+  napi_value this;
+  ModuleData* md;
+  struct B2 * b2;
+ 
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
+ 
+  printf("B2T_Open b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+
+  // Reset the shared buffer.
+  b2->produceCount = 0;
+  b2->consumeCount = 0;
+  b2->isOpen = TRUE;
+
+  // Create and start the consumer thread.
+  assert(uv_thread_create(&b2->consumerThread, consumeTokens, b2) == 0);
+
+  // Create and start the producer thread.
+  assert(uv_thread_create(&b2->producerThread, produceTokens, b2) == 0);
+
   return NULL;
 }
 
+void consumeToken (TokenType* tt, struct B2 * b2) {
+
+  // Set the consumer - producer delay in the tt->theDelay field.
+  long long int p = tt->theDelay;
+  struct timeval timer_us;
+  if (gettimeofday(&timer_us, NULL) == 0) {
+    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
+      (long long int) timer_us.tv_usec - p;
+  }
+  else tt->theDelay = -1ll;
+
+  // Pass the consumed token to the 'onToken' JavaScript function,
+  // then wait until the main thread is done with the token.
+  assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onToken,
+        tt, napi_tsfn_blocking));
+  if (tt->theDelay != 0ll) {
+    printf("consumeToken sid: %d, wait for the token to be consumed\n",
+        b2->b2t_this.sid);
+    uv_mutex_lock(&b2->tokenConsumingMutex);
+
+    // Wait for the token to be consumed
+    while (b2->isOpen && tt->theDelay != 0ll)
+      uv_cond_wait(&b2->tokenConsuming, &b2->tokenConsumingMutex);
+    uv_mutex_unlock(&b2->tokenConsumingMutex);
+  }
+}
+
+void produceToken (TokenType* tt, struct B2 * b2) {
+  struct fifo* t;
+  if (b2->isOpen && b2->producer.tokens2produce.size == 0)
+    printf("produceToken sid: %d, wait for a token from the main thread\n",
+        b2->b2t_this.sid);
+  uv_mutex_lock(&b2->tokenProducingMutex);
+
+  if (b2->producer.tokens2produce.size > 0) {
+
+    // Token(s) have been produced by the main thread,
+    // remove the first token from the queue.
+    t = fifoOut(&b2->producer.tokens2produce);
+    if (t) { // if it's not NULL, copy it to the shared buffer and return
+      memcpy(tt, t, sizeof(TokenType));
+      free(t);
+      uv_mutex_unlock(&b2->tokenProducingMutex); 
+      return;
+    }
+  }
+
+  // Otherwise, wait for a token from the main thread.
+  while (b2->isOpen && b2->producer.tokens2produce.size == 0)
+    uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
+
+  if (b2->isOpen) {
+    t = fifoOut(&b2->producer.tokens2produce); // remove it from the queue,
+    memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and return
+    free(t);
+  }
+  uv_mutex_unlock(&b2->tokenProducingMutex);
+}
+
 static napi_value B2T_Close (napi_env env, napi_callback_info info) {
+  napi_value this;
+  ModuleData* md;
+  struct B2 * b2;
+ 
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
+ 
+  printf("B2T_Close b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+
   return NULL;
 }
 
@@ -133,10 +221,6 @@ static napi_value B2T_Consumer (napi_env env, napi_callback_info info) {
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
   consumer = newInstance(env, md->ct_constructor, b2, 0, 0);
-
-  printf("B2T_Consumer b2->b2t_this.sid: %u\n",
-      b2->b2t_this.sid);
-
   return consumer;
 }
 
@@ -158,6 +242,18 @@ static napi_value PT_Send (napi_env env, napi_callback_info info) {
 // structure.
 napi_value ConsumerTypeConstructor (napi_env env, napi_callback_info info) {
   return NULL;
+}
+
+// Getter for the `sid` property of the `TokenType` object.
+static napi_value GetSid (napi_env env, napi_callback_info info) {
+  napi_value this, property;
+  ModuleData* md;
+  struct B2 * b2;
+
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, this, (void**)&b2));
+  assert(napi_ok == napi_create_uint32(env, b2->b2t_this.sid, &property));
+  return property;
 }
 
 static void finalizeOnClose (napi_env env, void* data, void* context) {
@@ -212,9 +308,6 @@ static napi_value CT_On (napi_env env, napi_callback_info info) {
   assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
   assert(napi_ok == napi_get_value_string_utf8(env, argv[0], event, 6, &argc));
-
-  printf("CT_On b2->b2t_this.sid: %u, event: %s\n", b2->b2t_this.sid, event);
-
   if (strcmp("token", event) == 0) { // create the onToken tsfn
     assert(napi_ok == napi_create_string_utf8(
           env, descT, NAPI_AUTO_LENGTH, &nameT));
@@ -243,7 +336,7 @@ napi_value TokenTypeConstructor (napi_env env, napi_callback_info info) {
 }
 
 // Getter for the `sid` property of the `TokenType` object.
-static napi_value GetTokenSid (napi_env env, napi_callback_info info) {
+static napi_value TT_GetSid (napi_env env, napi_callback_info info) {
   napi_value jsthis, property;
   ModuleData* md;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
@@ -255,7 +348,7 @@ static napi_value GetTokenSid (napi_env env, napi_callback_info info) {
 }
 
 // Getter for the `message` property of the `TokenType` object.
-static napi_value GetTokenMessage (napi_env env, napi_callback_info info) {
+static napi_value TT_GetMessage (napi_env env, napi_callback_info info) {
   napi_value jsthis, property;
   ModuleData* md;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
@@ -268,7 +361,7 @@ static napi_value GetTokenMessage (napi_env env, napi_callback_info info) {
 }
 
 // Getter for the `delay` property of the `TokenType` object.
-static napi_value GetTokenDelay (napi_env env, napi_callback_info info) {
+static napi_value TT_GetDelay (napi_env env, napi_callback_info info) {
   napi_value jsthis, property;
   ModuleData* md;
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &jsthis, (void*)&md));
@@ -286,37 +379,37 @@ static inline void initModuleData (napi_env env, ModuleData* md) {
   // during the 'freeModuleData' call.
   char* propNamesTT[3] = { "sid", "message", "delay" };
   napi_property_descriptor pTT[3];
-  napi_callback methodsTT[3] = { NULL, NULL, NULL },
-               gettersTT[3] = { GetTokenSid, GetTokenMessage, GetTokenDelay }; 
+  napi_callback methodsTT[3] = { 0, 0, 0 },
+               gettersTT[3] = { TT_GetSid, TT_GetMessage, TT_GetDelay }; 
   defObj_n_props(env, md, "TokenType", TokenTypeConstructor,
       &md->tt_constructor, 3, pTT, propNamesTT, gettersTT, methodsTT);
 
   // Define the bounded buffer type. The md->b2t_constructor napi_ref 
   // will be deleted during the 'freeModuleData' call.
-  char* propNamesB2T[4] = { "producer", "consumer", "open", "close" };
-  napi_property_descriptor pB2T[4];
-  napi_callback methodsB2T[4] = { NULL, NULL, B2T_Open, B2T_Close },
-                gettersB2T[4] = { B2T_Producer, B2T_Consumer, NULL, NULL };
+  char* propNamesB2T[5] = { "sid", "producer", "consumer", "open", "close" };
+  napi_property_descriptor pB2T[5];
+  napi_callback methodsB2T[5] = { 0, 0, 0, B2T_Open, B2T_Close },
+                gettersB2T[5] = { GetSid, B2T_Producer, B2T_Consumer, 0, 0 };
   defObj_n_props(env, md, "B2Type", B2TypeConstructor,
-      &md->b2t_constructor, 4, pB2T, propNamesB2T, gettersB2T, methodsB2T);
+      &md->b2t_constructor, 5, pB2T, propNamesB2T, gettersB2T, methodsB2T);
 
   // Define the producer type. The md->pt_constructor napi_ref will be deleted
   // during the 'freeModuleData' call.
-  char* propNamesPT[1] = { "send" };
-  napi_property_descriptor pPT[1];
-  napi_callback methodsPT[1] = { PT_Send },
-                gettersPT[1] = { NULL };
+  char* propNamesPT[2] = { "sid", "send" };
+  napi_property_descriptor pPT[2];
+  napi_callback methodsPT[2] = { 0, PT_Send },
+                gettersPT[2] = { GetSid, 0 };
   defObj_n_props(env, md, "ProducerType", ProducerTypeConstructor,
-      &md->pt_constructor, 1, pPT, propNamesPT, gettersPT, methodsPT);
+      &md->pt_constructor, 2, pPT, propNamesPT, gettersPT, methodsPT);
 
   // Define the consumer type. The md->ct_constructor napi_ref will be deleted
   // during the 'freeModuleData' call.
-  char* propNamesCT[2] = { "on", "doneWith" };
-  napi_property_descriptor pCT[2];
-  napi_callback methodsCT[2] = { CT_On, CT_DoneWith },
-                gettersCT[2] = { NULL, NULL };
+  char* propNamesCT[3] = { "sid", "on", "doneWith" };
+  napi_property_descriptor pCT[3];
+  napi_callback methodsCT[3] = { 0, CT_On, CT_DoneWith },
+                gettersCT[3] = { GetSid, 0, 0 };
   defObj_n_props(env, md, "ConsumerType", ConsumerTypeConstructor,
-      &md->ct_constructor, 2, pCT, propNamesCT, gettersCT, methodsCT);
+      &md->ct_constructor, 3, pCT, propNamesCT, gettersCT, methodsCT);
 }
 
 static void freeB2native (napi_env env, void* data, void* hint) {

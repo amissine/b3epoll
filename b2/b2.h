@@ -36,6 +36,25 @@ static inline bool fifoEmpty (struct fifo* q) {
 //   q->in->sid > t->sid if q->in != t
 //
 
+// The data in the shared buffer.
+typedef struct {
+  struct fifo tt_this;
+  char theMessage[128];
+  long long int theDelay;
+} TokenType;
+static inline void initTokenType (TokenType* tt, char* theMessage) {
+  struct timeval timer_us;
+  if (gettimeofday(&timer_us, NULL) == 0) {
+    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
+      (long long int) timer_us.tv_usec;
+  }
+  else tt->theDelay = -1ll;
+  
+  size_t i0 = sizeof(tt->theMessage) - 1;
+  strncpy(tt->theMessage, theMessage, i0);
+  tt->theMessage[i0] = '\0';
+} 
+
 // The data associated with an instance of the module. This takes the place of
 // global static variables, while allowing multiple instances of the module to
 // co-exist.
@@ -65,6 +84,10 @@ struct B2 {
              tokenProducingMutex, tokenConsumingMutex;
   struct Producer producer;
   struct Consumer consumer;
+  volatile bool isOpen;
+  volatile unsigned int produceCount, consumeCount;
+  size_t sharedBuffer_size;
+  TokenType sharedBuffer[];
 };
 
 static inline bool is_undefined (napi_env env, napi_value v) {
@@ -125,25 +148,11 @@ static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* ar
   return b2;
 }
 
-// The data in the shared buffer.
-typedef struct {
-  struct fifo tt_this;
-  char theMessage[128];
-  long long int theDelay;
-} TokenType;
-static inline void initTokenType (TokenType* tt, char* theMessage) {
-  struct timeval timer_us;
-  if (gettimeofday(&timer_us, NULL) == 0) {
-    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
-      (long long int) timer_us.tv_usec;
-  }
-  else tt->theDelay = -1ll;
-  
-  size_t i0 = sizeof(tt->theMessage) - 1;
-  strncpy(tt->theMessage, theMessage, i0);
-  tt->theMessage[i0] = '\0';
-} 
+void produceTokens (void*);
+void consumeTokens (void*);
 
+void produceToken (TokenType *, struct B2 *);
+void consumeToken (TokenType *, struct B2 *);
 /*
 typedef struct {
   uv_mutex_t check_status_mutex, tokenProducedMutex, tokenConsumedMutex;
@@ -161,8 +170,6 @@ typedef struct {
 } AddonData;
 
 extern volatile unsigned int produceCount, consumeCount;
-void produceTokens (void*);
-void consumeTokens (void*);
 
 #ifdef TOKEN_JAVASCRIPT
 // These definitions are used in the beginning of the development. The data

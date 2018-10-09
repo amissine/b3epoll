@@ -21,11 +21,16 @@ describe('Basic B3 functionality:', () => {
     assert.object(b3, 'b3')
     done()
   })
+  it('properly opens and runs the instances of itself', done => {
+    b3.open()
+    x.open()
+    done()
+  })
   it('properly closes and destroys the instances of itself', done => {
     setTimeout(() => b3.close(), 1000)
     setTimeout(() => x.close(), 1100)
     setTimeout(() => {
-      console.log('done B3 close test')
+      console.log('done B3.close test')
       done()
     }, 1200)
   }).timeout(2000)

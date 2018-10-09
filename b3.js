@@ -5,23 +5,36 @@ var b3Count = 0
 
 class B3 {
   constructor (left, right) {
-    var b2lr = B2.newB2(left, right)
-    var b2rl = B2.newB2(right, left)
-    var b2lrConsumer = b2lr.consumer
+    this.b2lr = B2.newB2(left, right)
+    this.b2rl = B2.newB2(right, left)
+    var b2lrConsumer = this.b2lr.consumer
+    var b2rlConsumer = this.b2rl.consumer
     this.count = b3Count++
 
-    console.log('B3 this.count: %d %O %O',
-      this.count, b2rl, b2lrConsumer) // b2rl for lint
-    b2lrConsumer.on('token', t => {
-      console.log('%O', t)
-      b2lrConsumer.doneWith(t)
-    })
-    b2lrConsumer.on('close', () => {
-      console.log('The b2lr threads are stopped now.')
-    })
+    console.log('B3 this.count: %d', this.count)
+    addListeners(b2lrConsumer)
+    addListeners(b2rlConsumer)
+  }
+  open () {
+    console.log('open B3 this.count: %d', this.count)
+    this.b2lr.open()
+    this.b2rl.open()
   }
   close () {
     console.log('close B3 this.count: %d', this.count)
+    this.b2lr.close()
+    this.b2rl.close()
   }
 }
 module.exports = B3
+
+function addListeners (consumer) {
+  console.log('addListeners consumer.sid: %d', consumer.sid)
+  consumer.on('token', t => {
+    console.log('%O', t)
+    consumer.doneWith(t)
+  })
+  consumer.on('close', () => {
+    console.log('consumer.sid %d threads are stopped now.', consumer.sid)
+  })
+}

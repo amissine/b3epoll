@@ -1,4 +1,64 @@
 #include "b2.h"
+
+static void producer (struct B2 * b2) {
+  while (b2->isOpen) {
+    if (b2->produceCount - b2->consumeCount == b2->sharedBuffer_size) break;
+    produceToken(&b2->sharedBuffer[b2->produceCount % b2->sharedBuffer_size], b2);
+    if (b2->produceCount++ - b2->consumeCount == 0) {
+      uv_mutex_lock(&b2->tokenProducedMutex);
+      uv_cond_signal(&b2->tokenProduced);
+      uv_mutex_unlock(&b2->tokenProducedMutex);
+    }
+  }
+}
+
+static void consumer (struct B2 * b2) {
+  while (b2->isOpen) {
+    if (b2->produceCount - b2->consumeCount == 0) break;
+    consumeToken(&b2->sharedBuffer[b2->consumeCount % b2->sharedBuffer_size], b2);
+    if (b2->produceCount - b2->consumeCount++ == b2->sharedBuffer_size) {
+      uv_mutex_lock(&b2->tokenConsumedMutex);
+      uv_cond_signal(&b2->tokenConsumed);
+      uv_mutex_unlock(&b2->tokenConsumedMutex);
+    }
+  }
+}
+
+void produceTokens (void* data) {
+  struct B2 * b2 = (struct B2 *) data;
+  while (b2->isOpen) {
+    producer(b2);
+    if (b2->produceCount - b2->consumeCount == b2->sharedBuffer_size) {
+      printf("produceTokens sid: %d, sharedBuffer is full\n", b2->b2t_this.sid);
+      uv_mutex_lock(&b2->tokenConsumedMutex);
+
+      // shared Buffer is full
+      while (b2->isOpen &&
+          b2->produceCount - b2->consumeCount == b2->sharedBuffer_size)
+        uv_cond_wait(&b2->tokenConsumed, &b2->tokenConsumedMutex);
+      uv_mutex_unlock(&b2->tokenConsumedMutex);
+    }
+  }
+  printf("produceTokens sid: %d, returning\n", b2->b2t_this.sid);
+}
+
+void consumeTokens (void* data) {
+  struct B2 * b2 = (struct B2 *) data;
+  while (b2->isOpen) {
+    consumer(b2);
+    if (b2->produceCount == b2->consumeCount) {
+      printf("consumeTokens sid: %d, sharedBuffer is empty\n", b2->b2t_this.sid);
+      uv_mutex_lock(&b2->tokenProducedMutex);
+
+      // sharedBuffer is empty
+      while (b2->isOpen && b2->produceCount == b2->consumeCount)
+        uv_cond_wait(&b2->tokenProduced, &b2->tokenProducedMutex);
+      uv_mutex_unlock(&b2->tokenProducedMutex);
+    }
+  }
+  printf("consumeTokens sid: %d, returning\n", b2->b2t_this.sid);
+}
+
 /*
 #define REPORT_EVERY 1000
 
