@@ -1,8 +1,8 @@
 #include "b2.h"
 
-static void freeModuleData (napi_env env, void* data, void* hint) {
+static void FreeModuleData (napi_env env, void* data, void* hint) {
 
-  printf("freeModuleData started\n");
+  printf("FreeModuleData started\n");
 
   ModuleData* md = (ModuleData*) data;
   assert(napi_ok == napi_delete_reference(env, md->b2t_constructor));
@@ -134,65 +134,6 @@ static napi_value B2T_Open (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-void consumeToken (TokenType* tt, struct B2 * b2) {
-
-  // Set the consumer - producer delay in the tt->theDelay field.
-  long long int p = tt->theDelay;
-  struct timeval timer_us;
-  if (gettimeofday(&timer_us, NULL) == 0) {
-    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
-      (long long int) timer_us.tv_usec - p;
-  }
-  else tt->theDelay = -1ll;
-
-  // Pass the consumed token to the 'onToken' JavaScript function,
-  // then wait until the main thread is done with the token.
-  assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onToken,
-        tt, napi_tsfn_blocking));
-  if (tt->theDelay != 0ll) {
-    printf("consumeToken sid: %d, wait for the token to be consumed\n",
-        b2->b2t_this.sid);
-    uv_mutex_lock(&b2->tokenConsumingMutex);
-
-    // Wait for the token to be consumed
-    while (b2->isOpen && tt->theDelay != 0ll)
-      uv_cond_wait(&b2->tokenConsuming, &b2->tokenConsumingMutex);
-    uv_mutex_unlock(&b2->tokenConsumingMutex);
-  }
-}
-
-void produceToken (TokenType* tt, struct B2 * b2) {
-  struct fifo* t;
-  if (b2->isOpen && b2->producer.tokens2produce.size == 0)
-    printf("produceToken sid: %d, wait for a token from the main thread\n",
-        b2->b2t_this.sid);
-  uv_mutex_lock(&b2->tokenProducingMutex);
-
-  if (b2->producer.tokens2produce.size > 0) {
-
-    // Token(s) have been produced by the main thread,
-    // remove the first token from the queue.
-    t = fifoOut(&b2->producer.tokens2produce);
-    if (t) { // if it's not NULL, copy it to the shared buffer and return
-      memcpy(tt, t, sizeof(TokenType));
-      free(t);
-      uv_mutex_unlock(&b2->tokenProducingMutex); 
-      return;
-    }
-  }
-
-  // Otherwise, wait for a token from the main thread.
-  while (b2->isOpen && b2->producer.tokens2produce.size == 0)
-    uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
-
-  if (b2->isOpen) {
-    t = fifoOut(&b2->producer.tokens2produce); // remove it from the queue,
-    memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and return
-    free(t);
-  }
-  uv_mutex_unlock(&b2->tokenProducingMutex);
-}
-
 static napi_value B2T_Close (napi_env env, napi_callback_info info) {
   napi_value this;
   ModuleData* md;
@@ -200,8 +141,34 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
  
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
- 
-  printf("B2T_Close b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+  b2->isOpen = FALSE;
+
+  uv_mutex_lock(&b2->tokenProducingMutex);
+  uv_cond_signal(&b2->tokenProducing);
+  uv_mutex_unlock(&b2->tokenProducingMutex);
+
+  uv_mutex_lock(&b2->tokenConsumingMutex);
+  uv_cond_signal(&b2->tokenConsuming);
+  uv_mutex_unlock(&b2->tokenConsumingMutex);
+
+  assert(uv_thread_join(&b2->producerThread) == 0);
+  assert(uv_thread_join(&b2->consumerThread) == 0);
+
+  uv_mutex_destroy(&b2->tokenProducedMutex); 
+  uv_mutex_destroy(&b2->tokenConsumedMutex); 
+  uv_mutex_destroy(&b2->tokenProducingMutex); 
+  uv_mutex_destroy(&b2->tokenConsumingMutex); 
+  uv_cond_destroy(&b2->tokenProduced); 
+  uv_cond_destroy(&b2->tokenConsumed); 
+  uv_cond_destroy(&b2->tokenProducing); 
+  uv_cond_destroy(&b2->tokenConsuming);
+  unsigned int sid = b2->b2t_this.sid;
+  struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
+  struct fifo * p = q->out, * r = q->in;
+  p->in = r; r->out = p; queue->size--;
+  free(b2);
+  printf("B2T_Close sid: %u, md->b2instances.size: %zu\n",
+      sid, md->b2instances.size);
 
   return NULL;
 }
@@ -244,7 +211,8 @@ napi_value ConsumerTypeConstructor (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-// Getter for the `sid` property of the `TokenType` object.
+// Getter for the `sid` property of the `B2Type`, `ProducerType`, or
+// `ConsumerType` object.
 static napi_value GetSid (napi_env env, napi_callback_info info) {
   napi_value this, property;
   ModuleData* md;
@@ -256,17 +224,17 @@ static napi_value GetSid (napi_env env, napi_callback_info info) {
   return property;
 }
 
-static void finalizeOnClose (napi_env env, void* data, void* context) {
+static void FinalizeOnClose (napi_env env, void* data, void* context) {
   struct B2 * b2 = (struct B2 *)data;
 
-  printf("finalizeOnClose b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+  printf("FinalizeOnClose b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
 
 }
 
-static void finalizeOnToken (napi_env env, void* data, void* context) {
+static void FinalizeOnToken (napi_env env, void* data, void* context) {
   struct B2 * b2 = (struct B2 *)data;
 
-  printf("finalizeOnToken b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+  printf("FinalizeOnToken b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
 
 }
 
@@ -312,13 +280,13 @@ static napi_value CT_On (napi_env env, napi_callback_info info) {
     assert(napi_ok == napi_create_string_utf8(
           env, descT, NAPI_AUTO_LENGTH, &nameT));
     assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameT,
-          0, 1, b2, finalizeOnToken, b2, CallJs_onToken, &b2->consumer.onToken));
+          0, 1, b2, FinalizeOnToken, b2, CallJs_onToken, &b2->consumer.onToken));
   }
   else { // create the onClose tsfn
     assert(napi_ok == napi_create_string_utf8(
           env, descC, NAPI_AUTO_LENGTH, &nameC));
     assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameC,
-          0, 1, b2, finalizeOnClose, b2, 0, &b2->consumer.onClose));
+          0, 1, b2, FinalizeOnClose, b2, 0, &b2->consumer.onClose));
   }
   return NULL;
 }
@@ -372,11 +340,11 @@ static napi_value TT_GetDelay (napi_env env, napi_callback_info info) {
   return property;
 }
 
-static inline void initModuleData (napi_env env, ModuleData* md) {
+static inline void InitModuleData (napi_env env, ModuleData* md) {
   fifoInit(&md->b2instances);
  
   // Define the token type. The md->tt_constructor napi_ref will be deleted
-  // during the 'freeModuleData' call.
+  // during the 'FreeModuleData' call.
   char* propNamesTT[3] = { "sid", "message", "delay" };
   napi_property_descriptor pTT[3];
   napi_callback methodsTT[3] = { 0, 0, 0 },
@@ -385,7 +353,7 @@ static inline void initModuleData (napi_env env, ModuleData* md) {
       &md->tt_constructor, 3, pTT, propNamesTT, gettersTT, methodsTT);
 
   // Define the bounded buffer type. The md->b2t_constructor napi_ref 
-  // will be deleted during the 'freeModuleData' call.
+  // will be deleted during the 'FreeModuleData' call.
   char* propNamesB2T[5] = { "sid", "producer", "consumer", "open", "close" };
   napi_property_descriptor pB2T[5];
   napi_callback methodsB2T[5] = { 0, 0, 0, B2T_Open, B2T_Close },
@@ -394,7 +362,7 @@ static inline void initModuleData (napi_env env, ModuleData* md) {
       &md->b2t_constructor, 5, pB2T, propNamesB2T, gettersB2T, methodsB2T);
 
   // Define the producer type. The md->pt_constructor napi_ref will be deleted
-  // during the 'freeModuleData' call.
+  // during the 'FreeModuleData' call.
   char* propNamesPT[2] = { "sid", "send" };
   napi_property_descriptor pPT[2];
   napi_callback methodsPT[2] = { 0, PT_Send },
@@ -403,25 +371,13 @@ static inline void initModuleData (napi_env env, ModuleData* md) {
       &md->pt_constructor, 2, pPT, propNamesPT, gettersPT, methodsPT);
 
   // Define the consumer type. The md->ct_constructor napi_ref will be deleted
-  // during the 'freeModuleData' call.
+  // during the 'FreeModuleData' call.
   char* propNamesCT[3] = { "sid", "on", "doneWith" };
   napi_property_descriptor pCT[3];
   napi_callback methodsCT[3] = { 0, CT_On, CT_DoneWith },
                 gettersCT[3] = { GetSid, 0, 0 };
   defObj_n_props(env, md, "ConsumerType", ConsumerTypeConstructor,
       &md->ct_constructor, 3, pCT, propNamesCT, gettersCT, methodsCT);
-}
-
-static void freeB2native (napi_env env, void* data, void* hint) {
-  ModuleData* md = (ModuleData*)hint;
-  struct B2 * b2 = (struct B2 *)data;
-  struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
-  struct fifo * p = q->out, * r = q->in;
-  p->in = r; r->out = p; queue->size--;
-
-  printf("freeB2native queue->size: %zu\n", queue->size);
-
-  free(data);
 }
 
 // When the JavaScript side calls newB2 (for example, as follows:
@@ -442,7 +398,7 @@ static void freeB2native (napi_env env, void* data, void* hint) {
 // pair to it. It returns back the JavaScript object that can be used to 
 // start and stop the producer/consumer pair of threads, and to send and receive
 // messages between the producer and the consumer.
-napi_value newB2 (napi_env env, napi_callback_info info) {
+napi_value NewB2 (napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value argv[2], this;
   ModuleData* md;
@@ -450,14 +406,14 @@ napi_value newB2 (napi_env env, napi_callback_info info) {
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, 0, (void*)&md));
   b2 = newB2native(env, argc, argv, md);
-  this = newInstance(env, md->b2t_constructor, b2, freeB2native, md);
+  this = newInstance(env, md->b2t_constructor, b2, 0, 0);
   return this;
 }
 
-static inline napi_value bindings (
+static inline napi_value Bindings (
     napi_env env, napi_value exports, ModuleData* md) {
   napi_property_descriptor p[] = {
-    { "newB2", 0, newB2, 0, 0, 0, napi_default, md }
+    { "newB2", 0, NewB2, 0, 0, 0, napi_default, md }
   };
   assert(napi_ok == napi_define_properties(env, exports, 1, p));
   return exports;
@@ -477,9 +433,9 @@ static inline napi_value bindings (
 
   // Attach the module data to the exports object to ensure that they are
   // destroyed together. Initialize the module data.
-  assert(napi_ok == napi_wrap(env, exports, md, freeModuleData, 0, 0));
-  initModuleData(env, md);
+  assert(napi_ok == napi_wrap(env, exports, md, FreeModuleData, 0, 0));
+  InitModuleData(env, md);
   
   // Expose and return the bindings this addon provides.
-  return bindings(env, exports, md);
+  return Bindings(env, exports, md);
 }

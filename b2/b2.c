@@ -1,5 +1,64 @@
 #include "b2.h"
 
+static void consumeToken (TokenType* tt, struct B2 * b2) {
+
+  // Set the consumer - producer delay in the tt->theDelay field.
+  long long int p = tt->theDelay;
+  struct timeval timer_us;
+  if (gettimeofday(&timer_us, NULL) == 0) {
+    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
+      (long long int) timer_us.tv_usec - p;
+  }
+  else tt->theDelay = -1ll;
+
+  // Pass the consumed token to the 'onToken' JavaScript function,
+  // then wait until the main thread is done with the token.
+  assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onToken,
+        tt, napi_tsfn_blocking));
+  if (tt->theDelay != 0ll) {
+    printf("consumeToken sid: %d, wait for the token to be consumed\n",
+        b2->b2t_this.sid);
+    uv_mutex_lock(&b2->tokenConsumingMutex);
+
+    // Wait for the token to be consumed
+    while (b2->isOpen && tt->theDelay != 0ll)
+      uv_cond_wait(&b2->tokenConsuming, &b2->tokenConsumingMutex);
+    uv_mutex_unlock(&b2->tokenConsumingMutex);
+  }
+}
+
+static void produceToken (TokenType* tt, struct B2 * b2) {
+  struct fifo* t;
+  if (b2->isOpen && b2->producer.tokens2produce.size == 0)
+    printf("produceToken sid: %d, wait for a token from the main thread\n",
+        b2->b2t_this.sid);
+  uv_mutex_lock(&b2->tokenProducingMutex);
+
+  if (b2->producer.tokens2produce.size > 0) {
+
+    // Token(s) have been produced by the main thread,
+    // remove the first token from the queue.
+    t = fifoOut(&b2->producer.tokens2produce);
+    if (t) { // if it's not NULL, copy it to the shared buffer and return
+      memcpy(tt, t, sizeof(TokenType));
+      free(t);
+      uv_mutex_unlock(&b2->tokenProducingMutex); 
+      return;
+    }
+  }
+
+  // Otherwise, wait for a token from the main thread.
+  while (b2->isOpen && b2->producer.tokens2produce.size == 0)
+    uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
+
+  if (b2->isOpen) {
+    t = fifoOut(&b2->producer.tokens2produce); // remove it from the queue,
+    memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and return
+    free(t);
+  }
+  uv_mutex_unlock(&b2->tokenProducingMutex);
+}
+
 static void producer (struct B2 * b2) {
   while (b2->isOpen) {
     if (b2->produceCount - b2->consumeCount == b2->sharedBuffer_size) break;
@@ -22,6 +81,12 @@ static void consumer (struct B2 * b2) {
       uv_mutex_unlock(&b2->tokenConsumedMutex);
     }
   }
+  assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onClose,
+        0, napi_tsfn_blocking));
+  assert(napi_ok == napi_release_threadsafe_function(
+        b2->consumer.onToken, napi_tsfn_release));
+  assert(napi_ok == napi_release_threadsafe_function(
+        b2->consumer.onClose, napi_tsfn_release));
 }
 
 void produceTokens (void* data) {

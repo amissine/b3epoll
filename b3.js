@@ -35,6 +35,6 @@ function addListeners (consumer) {
     consumer.doneWith(t)
   })
   consumer.on('close', () => {
-    console.log('consumer.sid %d threads are stopped now.', consumer.sid)
+    console.log('- sid %d threads are stopped now.', consumer.sid)
   })
 }

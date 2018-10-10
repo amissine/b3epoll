@@ -136,12 +136,28 @@ static inline napi_value newInstance (napi_env env, napi_ref c, void* data,
 
 static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* argv, 
     ModuleData* md) {
+  struct B2Config {
+    size_t sharedBuffer_size;
+  } b2Config;
   if (argc == 2 && is_undefined(env, *argv++) && is_undefined(env, *argv)) {
     printf("newB2native: no config data, using defaults");
+
+    b2Config.sharedBuffer_size = 4; // must be 2^n
   }
-  struct B2 * b2 = (struct B2 *)memset(malloc(sizeof(*b2)), 0, sizeof(*b2));
-  fifoIn(&md->b2instances, &b2->b2t_this);
+  size_t b2size = sizeof(struct B2) +
+    sizeof(TokenType) * b2Config.sharedBuffer_size;
+  struct B2 * b2 = (struct B2 *)memset(malloc(b2size), 0, b2size);
+  b2->sharedBuffer_size = b2Config.sharedBuffer_size;
   b2->md = md;
+  fifoIn(&md->b2instances, &b2->b2t_this);
+  assert(uv_mutex_init(&b2->tokenProducedMutex) == 0);
+  assert(uv_mutex_init(&b2->tokenConsumedMutex) == 0);
+  assert(uv_mutex_init(&b2->tokenProducingMutex) == 0);
+  assert(uv_mutex_init(&b2->tokenConsumingMutex) == 0);
+  assert(uv_cond_init(&b2->tokenProduced) == 0);
+  assert(uv_cond_init(&b2->tokenConsumed) == 0);
+  assert(uv_cond_init(&b2->tokenProducing) == 0);
+  assert(uv_cond_init(&b2->tokenConsuming) == 0);
 
   printf("; b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
 
@@ -151,8 +167,6 @@ static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* ar
 void produceTokens (void*);
 void consumeTokens (void*);
 
-void produceToken (TokenType *, struct B2 *);
-void consumeToken (TokenType *, struct B2 *);
 /*
 typedef struct {
   uv_mutex_t check_status_mutex, tokenProducedMutex, tokenConsumedMutex;
