@@ -11,96 +11,6 @@ static void FreeModuleData (napi_env env, void* data, void* hint) {
   assert(napi_ok == napi_delete_reference(env, md->tt_constructor));
   free(data);
 }
-/*
-
-// When the thread is finished we join it to prevent memory leaks. We can safely
-// set `addon_data->tsfn` to NULL, because the thread-safe function will be
-// cleaned up in the background in response to the secondary thread having
-// called `napi_release_threadsafe_function()`.
-static void ThreadFinished (napi_env env, void* data, void* context) {
-  AddonData* ad = (AddonData*)data;
-
-  printf("ThreadFinished started, ad->js_accepts: %s\n", 
-      ad->js_accepts ? "true" : "false");
-
-  if (!ad->tsfn) return; // ad->onToken is being finalized
-
-  assert(uv_thread_join(&ad->the_thread) == 0);
-  ad->tsfn = NULL;
-
-  // Release the thread-safe function. This causes it to be cleaned up in the
-  // background.
-  assert(napi_release_threadsafe_function(ad->onToken,
-                                          napi_tsfn_release) == napi_ok);
-
-  uv_mutex_lock(&ad->tokenProducedMutex);
-  uv_cond_signal(&ad->tokenProduced);
-  uv_mutex_unlock(&ad->tokenProducedMutex);
-
-  uv_mutex_lock(&ad->tokenProducingMutex);
-  uv_cond_signal(&ad->tokenProducing);
-  uv_mutex_unlock(&ad->tokenProducingMutex);
-
-  uv_mutex_lock(&ad->tokenConsumedMutex);
-  uv_cond_signal(&ad->tokenConsumed);
-  uv_mutex_unlock(&ad->tokenConsumedMutex);
-
-  uv_mutex_lock(&ad->tokenConsumingMutex);
-  uv_cond_signal(&ad->tokenConsuming);
-  uv_mutex_unlock(&ad->tokenConsumingMutex);
-
-  assert(uv_thread_join(&ad->producerThread) == 0);
-  assert(uv_thread_join(&ad->consumerThread) == 0);
-  
-  // Empty the queue of tokens that have not been produced.
-  struct fifo* t;
-  while ((t = fifoOut(&ad->queue)) != NULL) {
-    printf("ThreadFinished token->thePrime: %d\n", ((TokenType*)t)->thePrime);
-    free(t);
-  }
-  printf("ThreadFinished returning, ad->queue.size: %zu\n", ad->queue.size);
-}
-
-// This binding can be called from JavaScript to start the producer-consumer
-// pair of threads and the original thread that generates prime numbers.
-static napi_value Start (napi_env env, napi_callback_info info) {
-  size_t argc = 2;
-  napi_value js_cb[2], name1, name2;
-  AddonData* ad;
-  char desc2[] = "b3epoll TOKEN_JAVASCRIPT token generator";
-  char desc1[] = "b3epoll TOKEN_JAVASCRIPT token consumer";
-
-  // The binding accepts two parameters - the JavaScript callback functions
-  // `onToken` and `onItem`.
-  assert(napi_get_cb_info(
-        env, info, &argc, js_cb, NULL, (void*)&ad) == napi_ok);
-
-  // We do not create a second thread if one is already running.
-  assert(ad->tsfn == NULL && "Work already in progress");
-
-  ad->js_accepts = true;
-
-  // These strings describe the asynchronous work.
-  assert(napi_create_string_utf8(env, desc2, NAPI_AUTO_LENGTH, &name2) == napi_ok);
-  assert(napi_ok == napi_create_string_utf8(env, desc1, NAPI_AUTO_LENGTH, &name1));
-
-  // The thread-safe function will be created with an unlimited queue and with
-  // an initial thread count of 1. The secondary thread will release the
-  // thread-safe function, decreasing its thread count to 0, thereby setting off
-  // the process of cleaning up the thread-safe function.
-  assert(napi_ok == napi_create_threadsafe_function(env, js_cb[1], NULL, name2,
-        0, 1, ad, ThreadFinished, ad, CallJs, &ad->tsfn));
-  assert(napi_ok == napi_create_threadsafe_function(env, js_cb[0], NULL, name1,
-        0, 1, ad, ThreadFinished, ad, CallJs_onToken, &ad->onToken));
-
-  // Create the thread that will produce primes and that will call into
-  // JavaScript using the thread-safe function.
-  assert(uv_thread_create(&(ad->the_thread), PrimeThread, ad) == 0);
-
-  // Create the producer-consumer pair of threads.
-  return Start2Threads(ad);
-}
-*/
 
 // Constructor for instances of the `B2Type` class. This doesn't need to do
 // anything since all we want the class for is to be able to type-check
@@ -211,18 +121,12 @@ static napi_value PT_Send (napi_env env, napi_callback_info info) {
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, &argv, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
-  if (!b2->isOpen) { // TODO Fixme
-
-    printf("PT_Send sid %d is CLOSED\n", b2->b2t_this.sid);
-
-    return NULL;
-  }
   assert(napi_ok == napi_get_value_string_utf8(env, argv, msg, 128, &argc));
 
   // Initialise the token with the item data, queue it and notify
   // the producer thread.
   tt = memset(malloc(sizeof(*tt)), 0, sizeof(*tt));
-  initTokenType(tt, msg, b2);
+  initTokenType(tt, msg);
   uv_mutex_lock(&b2->tokenProducingMutex);
   fifoIn(&b2->producer.tokens2produce, &tt->tt_this);
   uv_cond_signal(&b2->tokenProducing);
@@ -253,17 +157,17 @@ static napi_value GetSid (napi_env env, napi_callback_info info) {
 }
 
 static void FinalizeOnClose (napi_env env, void* data, void* context) {
-  struct B2 * b2 = (struct B2 *)data;
+  ModuleData* md = (ModuleData*)data;
 
-  printf("FinalizeOnClose b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
-
+  printf("FinalizeOnClose md->b2instances.size: %zu\n", 
+      md->b2instances.size);
 }
 
 static void FinalizeOnToken (napi_env env, void* data, void* context) {
-  struct B2 * b2 = (struct B2 *)data;
+  ModuleData* md = (ModuleData*)data;
 
-  printf("FinalizeOnToken b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
-
+  printf("FinalizeOnToken md->b2instances.size: %zu\n", 
+      md->b2instances.size);
 }
 
 // This function is responsible for converting the native data coming in from
@@ -308,13 +212,13 @@ static napi_value CT_On (napi_env env, napi_callback_info info) {
     assert(napi_ok == napi_create_string_utf8(
           env, descT, NAPI_AUTO_LENGTH, &nameT));
     assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameT,
-          0, 1, b2, FinalizeOnToken, b2, CallJs_onToken, &b2->consumer.onToken));
+          0, 1, md, FinalizeOnToken, b2, CallJs_onToken, &b2->consumer.onToken));
   }
   else { // create the onClose tsfn
     assert(napi_ok == napi_create_string_utf8(
           env, descC, NAPI_AUTO_LENGTH, &nameC));
     assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameC,
-          0, 1, b2, FinalizeOnClose, b2, 0, &b2->consumer.onClose));
+          0, 1, md, FinalizeOnClose, b2, 0, &b2->consumer.onClose));
   }
   return NULL;
 }
@@ -327,20 +231,17 @@ static napi_value CT_DoneWith (napi_env env, napi_callback_info info) {
   struct B2 * b2;
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, &argv, &this, (void*)&md));
-  assert(napi_ok == napi_unwrap(env, this, (void*)&tt));
-  b2 = tt->b2;
-  if (b2->isOpen) {
+  assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
 
-    // Notify the consumer thread that the token has been consumed.
-    uv_mutex_lock(&b2->tokenConsumingMutex);
-    tt->theDelay = 0ll;
-    uv_cond_signal(&b2->tokenConsuming);
-    uv_mutex_unlock(&b2->tokenConsumingMutex);
-  }
-  else {
-    printf("CT_DoneWith b2->b2t_this.sid: %d, b2->isOpen: %s\n", 
-        b2->b2t_this.sid, b2->isOpen ? "TRUE" : "FALSE");
-  }
+  // Retrieve the native token.
+  assert(napi_ok == napi_unwrap(env, argv, (void**)&tt));
+
+  // Notify the consumer thread that the token has been consumed.
+  uv_mutex_lock(&b2->tokenConsumingMutex);
+  tt->theDelay = 0ll;
+  uv_cond_signal(&b2->tokenConsuming);
+  uv_mutex_unlock(&b2->tokenConsumingMutex);
+  
   return NULL;
 }
 

@@ -27,17 +27,17 @@ describe('Basic B3 functionality:', () => {
     done()
   })
   it('properly closes and destroys the instances of itself', done => {
-    setTimeout(() => b3.close(), 4000)
-    setTimeout(() => x.close(), 4100)
+    setTimeout(() => b3.close(), 100)
+    setTimeout(() => x.close(), 110)
     setTimeout(() => {
       console.log('done B3.close test')
       done()
-    }, 4200)
-  }).timeout(5000)
+    }, 120)
+  }).timeout(200)
   it('runs the echo exchange', done => runEchoExchange(done)
-  ).timeout(2000)
+  ).timeout(200)
   it('handles the backpressure nicely', done => handleBackpressure(done)
-  ).timeout(2000)
+  ).timeout(200)
 })
 
 function runEchoExchange (done) {
@@ -45,7 +45,7 @@ function runEchoExchange (done) {
   setTimeout(() => {
     console.log('runEchoExchange done')
     done()
-  }, 1500)
+  }, 100)
 }
 
 function handleBackpressure (done) {

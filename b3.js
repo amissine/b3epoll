@@ -35,23 +35,17 @@ class B3 {
 module.exports = B3
 
 function addListeners (consumer) {
+  var consumerSid = consumer.sid
   console.log('+%d ms - addListeners consumer.sid: %d',
-    Date.now() - start, consumer.sid)
+    Date.now() - start, consumerSid)
   consumer.on('token', t => {
-    /*
-    setTimeout(() => {
-      console.log('- token sid: %d, message: %s, delay %d µs',
-        t.sid, t.message, t.delay)
-      consumer.doneWith(t)
-    }, 200)
-    */
-    console.log('+%d ms - token sid: %d, message: %s, delay %d µs',
-      Date.now() - start, t.sid, t.message, t.delay)
+    console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
+      Date.now() - start, consumerSid, t.sid, t.message, t.delay)
     consumer.doneWith(t)
   })
   consumer.on('close', () => {
     console.log('+%d ms - sid %d threads are stopped now.',
-      Date.now() - start, consumer.sid)
+      Date.now() - start, consumerSid)
   })
 }
 

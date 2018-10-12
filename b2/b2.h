@@ -37,14 +37,12 @@ static inline bool fifoEmpty (struct fifo* q) {
 //
 
 // The data in the shared buffer.
-struct B2;
 typedef struct {
   struct fifo tt_this;
   char theMessage[128];
   long long int theDelay;
-  struct B2 * b2;
 } TokenType;
-static inline void initTokenType (TokenType* tt, char* theMessage, struct B2 * b2) {
+static inline void initTokenType (TokenType* tt, char* theMessage) {
   struct timeval timer_us;
   if (gettimeofday(&timer_us, NULL) == 0) {
     tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
@@ -55,8 +53,6 @@ static inline void initTokenType (TokenType* tt, char* theMessage, struct B2 * b
   size_t i0 = sizeof(tt->theMessage) - 1;
   strncpy(tt->theMessage, theMessage, i0);
   tt->theMessage[i0] = '\0';
-
-  tt->b2 = b2;
 } 
 
 // The data associated with an instance of the module. This takes the place of
@@ -171,64 +167,4 @@ static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* ar
 void produceTokens (void*);
 void consumeTokens (void*);
 
-/*
-typedef struct {
-  uv_mutex_t check_status_mutex, tokenProducedMutex, tokenConsumedMutex;
-#ifdef TOKEN_JAVASCRIPT
-  uv_mutex_t tokenProducingMutex, tokenConsumingMutex;
-  uv_cond_t tokenProducing, tokenConsuming;
-  struct fifo queue; // tokens to produce
-#endif // TOKEN_JAVASCRIPT  
-  uv_cond_t tokenProduced, tokenConsumed;
-  uv_thread_t the_thread, producerThread, consumerThread;
-  napi_threadsafe_function tsfn, onToken;
-  napi_ref thread_item_constructor;
-  napi_ref token_type_constructor;
-  volatile bool js_accepts;
-} AddonData;
-
-extern volatile unsigned int produceCount, consumeCount;
-
-#ifdef TOKEN_JAVASCRIPT
-// These definitions are used in the beginning of the development. The data
-// are prime numbers accompanied with the time it took to get one. The both
-// sides of the shared buffer are the JavaScript functions.
-
-#define produceToken produceTokenJavascript
-#define consumeToken consumeTokenJavascript
-#define Start2Threads Start2ThreadsTokenJavascript
-
-void consumeTokenJavascript (TokenType*, AddonData*);
-void produceTokenJavascript (TokenType*, AddonData*);
-
-// An item that will be generated from the thread, passed into JavaScript, and
-// ultimately marked as resolved when the JavaScript passes it back into the
-// addon instance with a return value.
-typedef struct ThreadItem {
-  // This field is read-only once set, so it need not be protected by the mutex.
-  int the_prime;
-
-  // This field is only accessed from the secondary thread, so it also need not
-  // be protected by the mutex.
-  struct ThreadItem* next;
-
-  // These two values must be protected by the mutex.
-  bool call_has_returned;
-  bool return_value;
-} ThreadItem;
-
-void CallJs(napi_env env, napi_value js_cb, void* context, void* data);
-void CallJs_onToken(napi_env env, napi_value js_cb, void* context, void* data);
-napi_value ThreadItemConstructor (napi_env env, napi_callback_info info);
-napi_value TokenTypeConstructor (napi_env env, napi_callback_info info);
-napi_value GetPrime (napi_env env, napi_callback_info info);
-napi_value GetTokenPrime (napi_env env, napi_callback_info info);
-napi_value GetTokenDelay (napi_env env, napi_callback_info info);
-void PrimeThread (void* data); 
-napi_value RegisterReturnValue (napi_env env, napi_callback_info info);
-napi_value NotifyTokenProducer (napi_env env, napi_callback_info info);
-napi_value Start2ThreadsTokenJavascript (AddonData* ad);
-
-#endif // TOKEN_JAVASCRIPT
-*/
 #endif // B2_H
