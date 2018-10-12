@@ -31,7 +31,7 @@ static napi_value B2T_Open (napi_env env, napi_callback_info info) {
   // Reset the shared buffer.
   b2->produceCount = 0;
   b2->consumeCount = 0;
-  b2->isOpen = TRUE;
+  b2->isOpen = 1;
 
   // Create and start the consumer thread.
   assert(uv_thread_create(&b2->consumerThread, consumeTokens, b2) == 0);
@@ -49,7 +49,7 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
  
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
-  b2->isOpen = FALSE;
+  b2->isOpen = 0;
 
   uv_mutex_lock(&b2->tokenProducingMutex);
   uv_cond_signal(&b2->tokenProducing);
