@@ -81,12 +81,6 @@ static void consumer (struct B2 * b2) {
       uv_mutex_unlock(&b2->tokenConsumedMutex);
     }
   }
-  assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onClose,
-        0, napi_tsfn_blocking));
-  assert(napi_ok == napi_release_threadsafe_function(
-        b2->consumer.onToken, napi_tsfn_release));
-  assert(napi_ok == napi_release_threadsafe_function(
-        b2->consumer.onClose, napi_tsfn_release));
 }
 
 void produceTokens (void* data) {
@@ -121,6 +115,12 @@ void consumeTokens (void* data) {
       uv_mutex_unlock(&b2->tokenProducedMutex);
     }
   }
+  assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onClose,
+        0, napi_tsfn_blocking));
+  assert(napi_ok == napi_release_threadsafe_function(
+        b2->consumer.onToken, napi_tsfn_release));
+  assert(napi_ok == napi_release_threadsafe_function(
+        b2->consumer.onClose, napi_tsfn_release));
   printf("consumeTokens sid: %d, returning\n", b2->b2t_this.sid);
 }
 

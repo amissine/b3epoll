@@ -37,12 +37,14 @@ static inline bool fifoEmpty (struct fifo* q) {
 //
 
 // The data in the shared buffer.
+struct B2;
 typedef struct {
   struct fifo tt_this;
   char theMessage[128];
   long long int theDelay;
+  struct B2 * b2;
 } TokenType;
-static inline void initTokenType (TokenType* tt, char* theMessage) {
+static inline void initTokenType (TokenType* tt, char* theMessage, struct B2 * b2) {
   struct timeval timer_us;
   if (gettimeofday(&timer_us, NULL) == 0) {
     tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
@@ -53,6 +55,8 @@ static inline void initTokenType (TokenType* tt, char* theMessage) {
   size_t i0 = sizeof(tt->theMessage) - 1;
   strncpy(tt->theMessage, theMessage, i0);
   tt->theMessage[i0] = '\0';
+
+  tt->b2 = b2;
 } 
 
 // The data associated with an instance of the module. This takes the place of

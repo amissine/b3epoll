@@ -117,8 +117,6 @@ static napi_value B2T_Open (napi_env env, napi_callback_info info) {
  
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
- 
-  printf("B2T_Open b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
 
   // Reset the shared buffer.
   b2->produceCount = 0;
@@ -174,10 +172,14 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
 }
 
 static napi_value B2T_Producer (napi_env env, napi_callback_info info) {
+  napi_value this, producer;
+  ModuleData* md;
+  struct B2 * b2;
 
-  printf("B2T_Producer started\n");
-
-  return NULL;
+  assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
+  producer = newInstance(env, md->pt_constructor, b2, 0, 0);
+  return producer;
 }
 
 static napi_value B2T_Consumer (napi_env env, napi_callback_info info) {
@@ -200,6 +202,32 @@ napi_value ProducerTypeConstructor (napi_env env, napi_callback_info info) {
 }
 
 static napi_value PT_Send (napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv, this;
+  ModuleData* md;
+  struct B2 * b2;
+  char msg[128];
+  TokenType* tt;
+
+  assert(napi_ok == napi_get_cb_info(env, info, &argc, &argv, &this, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
+  if (!b2->isOpen) { // TODO Fixme
+
+    printf("PT_Send sid %d is CLOSED\n", b2->b2t_this.sid);
+
+    return NULL;
+  }
+  assert(napi_ok == napi_get_value_string_utf8(env, argv, msg, 128, &argc));
+
+  // Initialise the token with the item data, queue it and notify
+  // the producer thread.
+  tt = memset(malloc(sizeof(*tt)), 0, sizeof(*tt));
+  initTokenType(tt, msg, b2);
+  uv_mutex_lock(&b2->tokenProducingMutex);
+  fifoIn(&b2->producer.tokens2produce, &tt->tt_this);
+  uv_cond_signal(&b2->tokenProducing);
+  uv_mutex_unlock(&b2->tokenProducingMutex);
+
   return NULL;
 }
 
@@ -292,6 +320,27 @@ static napi_value CT_On (napi_env env, napi_callback_info info) {
 }
 
 static napi_value CT_DoneWith (napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value this, argv;
+  ModuleData* md;
+  TokenType* tt;
+  struct B2 * b2;
+
+  assert(napi_ok == napi_get_cb_info(env, info, &argc, &argv, &this, (void*)&md));
+  assert(napi_ok == napi_unwrap(env, this, (void*)&tt));
+  b2 = tt->b2;
+  if (b2->isOpen) {
+
+    // Notify the consumer thread that the token has been consumed.
+    uv_mutex_lock(&b2->tokenConsumingMutex);
+    tt->theDelay = 0ll;
+    uv_cond_signal(&b2->tokenConsuming);
+    uv_mutex_unlock(&b2->tokenConsumingMutex);
+  }
+  else {
+    printf("CT_DoneWith b2->b2t_this.sid: %d, b2->isOpen: %s\n", 
+        b2->b2t_this.sid, b2->isOpen ? "TRUE" : "FALSE");
+  }
   return NULL;
 }
 
@@ -406,6 +455,7 @@ napi_value NewB2 (napi_env env, napi_callback_info info) {
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, 0, (void*)&md));
   b2 = newB2native(env, argc, argv, md);
+  fifoInit(&b2->producer.tokens2produce);
   this = newInstance(env, md->b2t_constructor, b2, 0, 0);
   return this;
 }
