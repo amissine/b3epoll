@@ -41,11 +41,32 @@ describe('Basic B3 functionality:', () => {
 })
 
 function runEchoExchange (done) {
-  console.log('runEchoExchange started')
-  setTimeout(() => {
-    console.log('runEchoExchange done')
+  var b3 = new B3({ noSelfTest: true, noDefaultListeners: true })
+  var count = 2
+  b3.b2lrConsumer.on('token', t => {
+    var msg2echo = t.message
+    b3.b2rlProducer.send(`+${B3.timeMs()} ms echo "${msg2echo}" back`)
+    b3.b2lrConsumer.doneWith(t)
+  })
+  b3.b2rlConsumer.on('token', t => {
+    console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
+      B3.timeMs(), b3.b2rlConsumer.sid, t.sid, t.message, t.delay)
+    b3.b2rlConsumer.doneWith(t)
+  })
+  b3.b2lrConsumer.on('close', () => {
+    if (--count) return
+    console.log(`+${B3.timeMs()} ms runEchoExchange done`)
     done()
-  }, 100)
+  })
+  b3.b2rlConsumer.on('close', () => {
+    if (--count) return
+    console.log(`+${B3.timeMs()} ms runEchoExchange done`)
+    done()
+  })
+
+  b3.open()
+  b3.b2lrProducer.send(`+${B3.timeMs()} ms runEchoExchange started`)
+  setTimeout(() => b3.close(), 50)
 }
 
 function handleBackpressure (done) {
