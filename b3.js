@@ -42,6 +42,7 @@ class B3 {
     console.log('B3.open this.count: %d', this.count)
     this._b2lr.open()
     this._b2rl.open()
+    this.isOpen = true
     if (this.noSelfTest) return
 
     selfTest(this.b2lrProducer)
@@ -51,6 +52,7 @@ class B3 {
     console.log('B3.close this.count: %d', this.count)
     this._b2lr.close()
     this._b2rl.close()
+    this.isOpen = false
   }
   static timeMs () {
     return Date.now() - start

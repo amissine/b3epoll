@@ -16,8 +16,10 @@ function b3common (functionName, timeoutMs, done) {
   var b3 = new B3({ noSelfTest: true, noDefaultListeners: true })
   var count = 2
   b3.b2lrConsumer.on('token', t => {
+    var msg = t.message
     setTimeout(() => {
-      b3.b2rlProducer.send(`+${B3.timeMs()} ms echo "${t.message}" back`)
+      if (!b3.isOpen) return
+      b3.b2rlProducer.send(`+${B3.timeMs()} ms echo "${msg}" back`)
       b3.b2lrConsumer.doneWith(t)
     }, timeoutMs)
   })
