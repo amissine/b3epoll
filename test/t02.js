@@ -27,12 +27,12 @@ describe('Basic B3 functionality:', () => {
     done()
   })
   it('properly closes and destroys the instances of itself', done => {
-    setTimeout(() => b3.close(), 100)
-    setTimeout(() => x.close(), 110)
+    setTimeout(() => b3.close(), 40)
+    setTimeout(() => x.close(), 40)
     setTimeout(() => {
       console.log('done B3.close test')
       done()
-    }, 120)
+    }, 50)
   }).timeout(200)
   it('runs the echo exchange', done => runEchoExchange(done)
   ).timeout(200)
@@ -41,12 +41,28 @@ describe('Basic B3 functionality:', () => {
 })
 
 function runEchoExchange (done) {
+  var b3 = b3common('runEchoExchange', 1, done)
+  b3.open()
+  b3.b2lrProducer.send(`+${B3.timeMs()} ms runEchoExchange started`)
+  setTimeout(() => b3.close(), 50)
+}
+
+function handleBackpressure (done) {
+  var b3 = b3common('handleBackpressure', 20, done)
+  var count = 8
+  b3.open()
+  while (count--) b3.b2lrProducer.send(`+${B3.timeMs()} ms handleBackpressure`)
+  setTimeout(() => b3.close(), 50)
+}
+
+function b3common (functionName, timeoutMs, done) {
   var b3 = new B3({ noSelfTest: true, noDefaultListeners: true })
   var count = 2
   b3.b2lrConsumer.on('token', t => {
-    var msg2echo = t.message
-    b3.b2rlProducer.send(`+${B3.timeMs()} ms echo "${msg2echo}" back`)
-    b3.b2lrConsumer.doneWith(t)
+    setTimeout(() => {
+      b3.b2rlProducer.send(`+${B3.timeMs()} ms echo "${t.message}" back`)
+      b3.b2lrConsumer.doneWith(t)
+    }, timeoutMs)
   })
   b3.b2rlConsumer.on('token', t => {
     console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
@@ -55,24 +71,13 @@ function runEchoExchange (done) {
   })
   b3.b2lrConsumer.on('close', () => {
     if (--count) return
-    console.log(`+${B3.timeMs()} ms runEchoExchange done`)
+    console.log(`+${B3.timeMs()} ms ${functionName} done`)
     done()
   })
   b3.b2rlConsumer.on('close', () => {
     if (--count) return
-    console.log(`+${B3.timeMs()} ms runEchoExchange done`)
+    console.log(`+${B3.timeMs()} ms ${functionName} done`)
     done()
   })
-
-  b3.open()
-  b3.b2lrProducer.send(`+${B3.timeMs()} ms runEchoExchange started`)
-  setTimeout(() => b3.close(), 50)
-}
-
-function handleBackpressure (done) {
-  console.log('handleBackpressure started')
-  setTimeout(() => {
-    console.log('handleBackpressure done')
-    done()
-  }, 100)
+  return b3
 }

@@ -16,8 +16,8 @@ static void consumeToken (TokenType* tt, struct B2 * b2) {
   assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onToken,
         tt, napi_tsfn_blocking));
   if (tt->theDelay != 0ll) {
-    printf("consumeToken sid: %d, wait for the token to be consumed\n",
-        b2->b2t_this.sid);
+    printf("consumeToken sid %d, wait for the shared token sid %d to be consumed\n",
+        b2->b2t_this.sid, tt->tt_this.sid);
     uv_mutex_lock(&b2->tokenConsumingMutex);
 
     // Wait for the token to be consumed
@@ -25,12 +25,14 @@ static void consumeToken (TokenType* tt, struct B2 * b2) {
       uv_cond_wait(&b2->tokenConsuming, &b2->tokenConsumingMutex);
     uv_mutex_unlock(&b2->tokenConsumingMutex);
   }
+  printf("consumeToken sid %d, shared token sid %d consumed\n", 
+      b2->b2t_this.sid, tt->tt_this.sid);
 }
 
 static void produceToken (TokenType* tt, struct B2 * b2) {
   struct fifo* t;
   if (b2->isOpen && b2->producer.tokens2produce.size == 0)
-    printf("produceToken sid: %d, wait for a token from the main thread\n",
+    printf("produceToken sid %d, wait for a token from the main thread\n",
         b2->b2t_this.sid);
   uv_mutex_lock(&b2->tokenProducingMutex);
 
@@ -43,6 +45,8 @@ static void produceToken (TokenType* tt, struct B2 * b2) {
       memcpy(tt, t, sizeof(TokenType));
       free(t);
       uv_mutex_unlock(&b2->tokenProducingMutex); 
+      printf("produceToken sid %d, token sid %d shared, returning 1\n", 
+          b2->b2t_this.sid, tt->tt_this.sid);
       return;
     }
   }
@@ -53,10 +57,13 @@ static void produceToken (TokenType* tt, struct B2 * b2) {
 
   if (b2->isOpen) {
     t = fifoOut(&b2->producer.tokens2produce); // remove it from the queue,
-    memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and return
+    memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and free it
     free(t);
   }
   uv_mutex_unlock(&b2->tokenProducingMutex);
+
+  printf("produceToken sid %d, token sid %d shared, returning 2\n", 
+      b2->b2t_this.sid, tt->tt_this.sid);
 }
 
 static void producer (struct B2 * b2) {
@@ -98,7 +105,7 @@ void produceTokens (void* data) {
       uv_mutex_unlock(&b2->tokenConsumedMutex);
     }
   }
-  printf("produceTokens sid: %d, returning\n", b2->b2t_this.sid);
+  printf("produceTokens sid %d, returning\n", b2->b2t_this.sid);
 }
 
 void consumeTokens (void* data) {
@@ -121,6 +128,5 @@ void consumeTokens (void* data) {
         b2->consumer.onToken, napi_tsfn_release));
   assert(napi_ok == napi_release_threadsafe_function(
         b2->consumer.onClose, napi_tsfn_release));
-  printf("consumeTokens sid: %d, returning\n", b2->b2t_this.sid);
+  printf("consumeTokens sid %d, returning\n", b2->b2t_this.sid);
 }
-

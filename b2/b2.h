@@ -159,7 +159,7 @@ static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* ar
   assert(uv_cond_init(&b2->tokenProducing) == 0);
   assert(uv_cond_init(&b2->tokenConsuming) == 0);
 
-  printf("; b2->b2t_this.sid: %u\n", b2->b2t_this.sid);
+  printf("; b2->b2t_this.sid %u\n", b2->b2t_this.sid);
 
   return b2;
 }

@@ -49,19 +49,17 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
  
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
-  b2->isOpen = 0;
 
+  // Stop the producer-consumer threads, destroy the uv threading harness.
+  b2->isOpen = 0;
   uv_mutex_lock(&b2->tokenProducingMutex);
   uv_cond_signal(&b2->tokenProducing);
   uv_mutex_unlock(&b2->tokenProducingMutex);
-
   uv_mutex_lock(&b2->tokenConsumingMutex);
   uv_cond_signal(&b2->tokenConsuming);
   uv_mutex_unlock(&b2->tokenConsumingMutex);
-
   assert(uv_thread_join(&b2->producerThread) == 0);
   assert(uv_thread_join(&b2->consumerThread) == 0);
-
   uv_mutex_destroy(&b2->tokenProducedMutex); 
   uv_mutex_destroy(&b2->tokenConsumedMutex); 
   uv_mutex_destroy(&b2->tokenProducingMutex); 
@@ -70,12 +68,19 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
   uv_cond_destroy(&b2->tokenConsumed); 
   uv_cond_destroy(&b2->tokenProducing); 
   uv_cond_destroy(&b2->tokenConsuming);
+
+  // Remove this b2 from md->b2instances, empty the queue of tokens that have not
+  // been produced, free the unproduced tokens and the b2.
   unsigned int sid = b2->b2t_this.sid;
   struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
   struct fifo * p = q->out, * r = q->in;
   p->in = r; r->out = p; queue->size--;
+  while ((q = fifoOut(&b2->producer.tokens2produce))) {
+    printf("B2T_Close sid %u, unproduced token sid %u\n", sid, q->sid);
+    free(q);
+  }
   free(b2);
-  printf("B2T_Close sid: %u, md->b2instances.size: %zu\n",
+  printf("B2T_Close sid %u, md->b2instances.size %zu\n",
       sid, md->b2instances.size);
 
   return NULL;
