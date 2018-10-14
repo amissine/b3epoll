@@ -132,10 +132,18 @@ static napi_value PT_Send (napi_env env, napi_callback_info info) {
   // the producer thread.
   tt = memset(malloc(sizeof(*tt)), 0, sizeof(*tt));
   initTokenType(tt, msg);
+
+  printf("PT_Send sid %d is about to queue tt->theMessage '%s'\n",
+      b2->b2t_this.sid, tt->theMessage);
+
   uv_mutex_lock(&b2->tokenProducingMutex);
   fifoIn(&b2->producer.tokens2produce, &tt->tt_this);
   uv_cond_signal(&b2->tokenProducing);
   uv_mutex_unlock(&b2->tokenProducingMutex);
+
+  printf("PT_Send sid %d queued token sid %d\n",
+      b2->b2t_this.sid, tt->tt_this.sid);
+
 
   return NULL;
 }
