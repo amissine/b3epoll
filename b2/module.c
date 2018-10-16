@@ -144,7 +144,6 @@ static napi_value PT_Send (napi_env env, napi_callback_info info) {
   printf("PT_Send sid %d queued token sid %d\n",
       b2->b2t_this.sid, tt->tt_this.sid);
 
-
   return NULL;
 }
 

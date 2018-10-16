@@ -1,6 +1,6 @@
 {
   "name": "b3epoll",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Bidirectional Bounded Buffer with N-API and Linux Epoll, pure C implementation",
   "main": "index.js",
   "scripts": {
