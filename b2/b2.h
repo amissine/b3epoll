@@ -140,8 +140,9 @@ static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* ar
     size_t sharedBuffer_size;
   } b2Config;
   if (argc == 2 && is_undefined(env, *argv++) && is_undefined(env, *argv)) {
+#ifdef DEBUG
     printf("newB2native: no config data, using defaults");
-
+#endif
     b2Config.sharedBuffer_size = 4; // must be 2^n
   }
   size_t b2size = sizeof(struct B2) +
@@ -158,9 +159,9 @@ static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* ar
   assert(uv_cond_init(&b2->tokenConsumed) == 0);
   assert(uv_cond_init(&b2->tokenProducing) == 0);
   assert(uv_cond_init(&b2->tokenConsuming) == 0);
-
+#ifdef DEBUG
   printf("; b2->b2t_this.sid %u\n", b2->b2t_this.sid);
-
+#endif
   return b2;
 }
 

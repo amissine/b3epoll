@@ -16,8 +16,10 @@ static void consumeToken (TokenType* tt, struct B2 * b2) {
   assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onToken,
         tt, napi_tsfn_blocking));
   if (tt->theDelay != 0ll) {
+#ifdef DEBUG
     printf("consumeToken sid %d, wait for the shared token sid %d to be consumed\n",
         b2->b2t_this.sid, tt->tt_this.sid);
+#endif
     uv_mutex_lock(&b2->tokenConsumingMutex);
 
     // Wait for the token to be consumed
@@ -25,15 +27,19 @@ static void consumeToken (TokenType* tt, struct B2 * b2) {
       uv_cond_wait(&b2->tokenConsuming, &b2->tokenConsumingMutex);
     uv_mutex_unlock(&b2->tokenConsumingMutex);
   }
+#ifdef DEBUG
   printf("consumeToken sid %d, shared token sid %d consumed\n", 
       b2->b2t_this.sid, tt->tt_this.sid);
+#endif
 }
 
 static void produceToken (TokenType* tt, struct B2 * b2) {
   struct fifo* t;
   if (b2->isOpen && b2->producer.tokens2produce.size == 0)
+#ifdef DEBUG
     printf("produceToken sid %d, wait for a token from the main thread\n",
         b2->b2t_this.sid);
+#endif
   uv_mutex_lock(&b2->tokenProducingMutex);
 
   if (b2->producer.tokens2produce.size > 0) {
@@ -44,9 +50,11 @@ static void produceToken (TokenType* tt, struct B2 * b2) {
     if (t) { // if it's not NULL, copy it to the shared buffer and return
       memcpy(tt, t, sizeof(TokenType));
       free(t);
-      uv_mutex_unlock(&b2->tokenProducingMutex); 
+      uv_mutex_unlock(&b2->tokenProducingMutex);
+#ifdef DEBUG
       printf("produceToken sid %d, token sid %d shared, returning 1\n", 
           b2->b2t_this.sid, tt->tt_this.sid);
+#endif
       return;
     }
   }
@@ -61,9 +69,10 @@ static void produceToken (TokenType* tt, struct B2 * b2) {
     free(t);
   }
   uv_mutex_unlock(&b2->tokenProducingMutex);
-
+#ifdef DEBUG
   printf("produceToken sid %d, token sid %d shared, returning 2\n", 
       b2->b2t_this.sid, tt->tt_this.sid);
+#endif
 }
 
 static void producer (struct B2 * b2) {
@@ -95,7 +104,9 @@ void produceTokens (void* data) {
   while (b2->isOpen) {
     producer(b2);
     if (b2->produceCount - b2->consumeCount == b2->sharedBuffer_size) {
+#ifdef DEBUG
       printf("produceTokens sid: %d, sharedBuffer is full\n", b2->b2t_this.sid);
+#endif
       uv_mutex_lock(&b2->tokenConsumedMutex);
 
       // shared Buffer is full
@@ -105,7 +116,9 @@ void produceTokens (void* data) {
       uv_mutex_unlock(&b2->tokenConsumedMutex);
     }
   }
+#ifdef DEBUG
   printf("produceTokens sid %d, returning\n", b2->b2t_this.sid);
+#endif
 }
 
 void consumeTokens (void* data) {
@@ -113,7 +126,9 @@ void consumeTokens (void* data) {
   while (b2->isOpen) {
     consumer(b2);
     if (b2->produceCount == b2->consumeCount) {
+#ifdef DEBUG
       printf("consumeTokens sid: %d, sharedBuffer is empty\n", b2->b2t_this.sid);
+#endif
       uv_mutex_lock(&b2->tokenProducedMutex);
 
       // sharedBuffer is empty
@@ -128,5 +143,7 @@ void consumeTokens (void* data) {
         b2->consumer.onToken, napi_tsfn_release));
   assert(napi_ok == napi_release_threadsafe_function(
         b2->consumer.onClose, napi_tsfn_release));
+#ifdef DEBUG
   printf("consumeTokens sid %d, returning\n", b2->b2t_this.sid);
+#endif
 }
