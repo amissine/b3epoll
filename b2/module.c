@@ -1,7 +1,7 @@
 #include "b2.h"
 
 static void FreeModuleData (napi_env env, void* data, void* hint) {
-#ifdef DEBUG
+#ifdef DEBUG_PRINTF
   printf("FreeModuleData started\n");
 #endif
   ModuleData* md = (ModuleData*) data;
@@ -71,20 +71,20 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
 
   // Remove this b2 from md->b2instances, empty the queue of tokens that have not
   // been produced, free the unproduced tokens and the b2.
-#ifdef DEBUG
+#ifdef DEBUG_PRINTF
   unsigned int sid = b2->b2t_this.sid;
 #endif
   struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
   struct fifo * p = q->out, * r = q->in;
   p->in = r; r->out = p; queue->size--;
   while ((q = fifoOut(&b2->producer.tokens2produce))) {
-#ifdef DEBUG
+#ifdef DEBUG_PRINTF
     printf("B2T_Close sid %u, unproduced token sid %u\n", sid, q->sid);
 #endif
     free(q);
   }
   free(b2);
-#ifdef DEBUG
+#ifdef DEBUG_PRINTF
   printf("B2T_Close sid %u, md->b2instances.size %zu\n",
       sid, md->b2instances.size);
 #endif
@@ -137,7 +137,7 @@ static napi_value PT_Send (napi_env env, napi_callback_info info) {
   // the producer thread.
   tt = memset(malloc(sizeof(*tt)), 0, sizeof(*tt));
   initTokenType(tt, msg);
-#ifdef DEBUG
+#ifdef DEBUG_PRINTF
   printf("PT_Send sid %d is about to queue tt->theMessage '%s'\n",
       b2->b2t_this.sid, tt->theMessage);
 #endif
@@ -145,7 +145,7 @@ static napi_value PT_Send (napi_env env, napi_callback_info info) {
   fifoIn(&b2->producer.tokens2produce, &tt->tt_this);
   uv_cond_signal(&b2->tokenProducing);
   uv_mutex_unlock(&b2->tokenProducingMutex);
-#ifdef DEBUG
+#ifdef DEBUG_PRINTF
   printf("PT_Send sid %d queued token sid %d\n",
       b2->b2t_this.sid, tt->tt_this.sid);
 #endif
@@ -174,7 +174,7 @@ static napi_value GetSid (napi_env env, napi_callback_info info) {
 }
 
 static void FinalizeOnClose (napi_env env, void* data, void* context) {
-#ifdef DEBUG
+#ifdef DEBUG_PRINTF
   ModuleData* md = (ModuleData*)data;
   printf("FinalizeOnClose md->b2instances.size: %zu\n", 
       md->b2instances.size);
@@ -182,7 +182,7 @@ static void FinalizeOnClose (napi_env env, void* data, void* context) {
 }
 
 static void FinalizeOnToken (napi_env env, void* data, void* context) {
-#ifdef DEBUG
+#ifdef DEBUG_PRINTF
   ModuleData* md = (ModuleData*)data;
   printf("FinalizeOnToken md->b2instances.size: %zu\n", 
       md->b2instances.size);
