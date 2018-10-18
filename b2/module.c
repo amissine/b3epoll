@@ -42,6 +42,17 @@ static napi_value B2T_Open (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+static inline void B2T_DestroyUVTH (struct B2 * b2) {
+  uv_mutex_destroy(&b2->tokenProducedMutex); 
+  uv_mutex_destroy(&b2->tokenConsumedMutex); 
+  uv_mutex_destroy(&b2->tokenProducingMutex); 
+  uv_mutex_destroy(&b2->tokenConsumingMutex); 
+  uv_cond_destroy(&b2->tokenProduced); 
+  uv_cond_destroy(&b2->tokenConsumed); 
+  uv_cond_destroy(&b2->tokenProducing); 
+  uv_cond_destroy(&b2->tokenConsuming);
+}
+
 static napi_value B2T_Close (napi_env env, napi_callback_info info) {
   napi_value this;
   ModuleData* md;
@@ -60,14 +71,7 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
   uv_mutex_unlock(&b2->tokenConsumingMutex);
   assert(uv_thread_join(&b2->producerThread) == 0);
   assert(uv_thread_join(&b2->consumerThread) == 0);
-  uv_mutex_destroy(&b2->tokenProducedMutex); 
-  uv_mutex_destroy(&b2->tokenConsumedMutex); 
-  uv_mutex_destroy(&b2->tokenProducingMutex); 
-  uv_mutex_destroy(&b2->tokenConsumingMutex); 
-  uv_cond_destroy(&b2->tokenProduced); 
-  uv_cond_destroy(&b2->tokenConsumed); 
-  uv_cond_destroy(&b2->tokenProducing); 
-  uv_cond_destroy(&b2->tokenConsuming);
+  B2T_DestroyUVTH(b2);
 
   // Remove this b2 from md->b2instances, empty the queue of tokens that have not
   // been produced, free the unproduced tokens and the b2.
