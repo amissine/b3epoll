@@ -42,13 +42,6 @@ static napi_value B2T_Open (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-static inline void B2T_DestroyProducerUVTH (struct B2 * b2) {
-  uv_mutex_destroy(&b2->tokenProducedMutex); 
-  uv_mutex_destroy(&b2->tokenProducingMutex); 
-  uv_cond_destroy(&b2->tokenProduced); 
-  uv_cond_destroy(&b2->tokenProducing); 
-}
-
 static napi_value B2T_Close (napi_env env, napi_callback_info info) {
   napi_value this;
   ModuleData* md;
@@ -57,17 +50,10 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
 
-  // Stop the producer thread, destroy its uv threading harness.
   b2->isOpen = 0;
   uv_mutex_lock(&b2->tokenProducingMutex);
   uv_cond_signal(&b2->tokenProducing);
   uv_mutex_unlock(&b2->tokenProducingMutex);
-  /*uv_mutex_lock(&b2->tokenConsumingMutex);
-  uv_cond_signal(&b2->tokenConsuming);
-  uv_mutex_unlock(&b2->tokenConsumingMutex);*/
-  assert(uv_thread_join(&b2->producerThread) == 0);
-  //assert(uv_thread_join(&b2->consumerThread) == 0);
-  B2T_DestroyProducerUVTH(b2);
   
   return NULL;
 }
@@ -154,25 +140,23 @@ static napi_value GetSid (napi_env env, napi_callback_info info) {
   return property;
 }
 
-/*
-static void FinalizeOnClose (napi_env env, void* data, void* context) {
-#ifdef DEBUG_PRINTF
-  ModuleData* md = (ModuleData*)data;
-  printf("FinalizeOnClose md->b2instances.size: %zu\n", 
-      md->b2instances.size);
-#endif
+static inline void B2T_DestroyUVTH (struct B2 * b2) {
+  uv_mutex_destroy(&b2->tokenProducedMutex); 
+  uv_mutex_destroy(&b2->tokenProducingMutex); 
+  uv_cond_destroy(&b2->tokenProduced); 
+  uv_cond_destroy(&b2->tokenProducing);
+  uv_mutex_destroy(&b2->tokenConsumedMutex); 
+  uv_mutex_destroy(&b2->tokenConsumingMutex); 
+  uv_cond_destroy(&b2->tokenConsumed); 
+  uv_cond_destroy(&b2->tokenConsuming);
 }
-*/
 
 static void FinalizeOnToken (napi_env env, void* data, void* context) {
   struct B2 * b2 = (struct B2 *)data;
   ModuleData* md = b2->md;
 
-  // The consumer thread has just stopped, destroy its uv harness.
-  uv_mutex_destroy(&b2->tokenConsumedMutex); 
-  uv_mutex_destroy(&b2->tokenConsumingMutex); 
-  uv_cond_destroy(&b2->tokenConsumed); 
-  uv_cond_destroy(&b2->tokenConsuming);
+  // Destroy the uv harness.
+  B2T_DestroyUVTH(b2);
 
   // Remove this b2 from md->b2instances, empty the queue of tokens that have not
   // yet been produced, free the unproduced tokens and the b2.
@@ -189,6 +173,9 @@ static void FinalizeOnToken (napi_env env, void* data, void* context) {
     free(q);
   }
   free(b2);
+#ifdef DEBUG_PRINTF
+  printf("FinalizeOnToken freed b2 for sid %u\n", sid);
+#endif
 }
 
 // This function is responsible for converting the native data coming in from
