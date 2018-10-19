@@ -23,7 +23,7 @@ static void consumeToken (TokenType* tt, struct B2 * b2) {
     uv_mutex_lock(&b2->tokenConsumingMutex);
 
     // Wait for the token to be consumed
-    while (b2->isOpen && tt->theDelay != 0ll)
+    while (/*b2->isOpen && */tt->theDelay != 0ll)
       uv_cond_wait(&b2->tokenConsuming, &b2->tokenConsumingMutex);
     uv_mutex_unlock(&b2->tokenConsumingMutex);
   }
@@ -137,12 +137,12 @@ void consumeTokens (void* data) {
       uv_mutex_unlock(&b2->tokenProducedMutex);
     }
   }
-  assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onClose,
+  /*assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onClose,
         0, napi_tsfn_blocking));
   assert(napi_ok == napi_release_threadsafe_function(
-        b2->consumer.onToken, napi_tsfn_release));
+        b2->consumer.onClose, napi_tsfn_release));*/
   assert(napi_ok == napi_release_threadsafe_function(
-        b2->consumer.onClose, napi_tsfn_release));
+        b2->consumer.onToken, napi_tsfn_release));
 #ifdef DEBUG_PRINTF
   printf("consumeTokens sid %d, returning\n", b2->b2t_this.sid);
 #endif

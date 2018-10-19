@@ -9,7 +9,7 @@ var x
 var count = 1
 
 describe('Basic B3 functionality:', () => {
-  it('is bidirectional', function (done) {
+  it('is bidirectional B2 (bounded buffer)', function (done) {
     if (count++) {
       assert.object(b3, 'b3')
       done()
@@ -29,8 +29,8 @@ describe('Basic B3 functionality:', () => {
   it('properly closes and destroys the instances of itself', done => {
     count = 2
     setTimeout(() => {
-      b3.close(allDone, done)
-      x.close(allDone, done)
+      b3.close()
+      x.close()
       console.log('done B3.close test')
       done()
     }, 40)
@@ -41,41 +41,34 @@ describe('Basic B3 functionality:', () => {
   ).timeout(200)
 })
 
-function allDone (done) {
-  if (--count) return
-  done()
-}
-
 function runEchoExchange (done) {
-  var b3 = b3common('runEchoExchange', 1, done)
+  var b3 = b3common('runEchoExchange', 1)
   b3.open()
   b3.b2lrProducer.send(`+${B3.timeMs()} ms runEchoExchange started`)
-  setTimeout(() => b3.close(allDone, done), 50)
+  setTimeout(() => { b3.close(); done() }, 50)
 }
 
 function handleBackpressure (done) {
-  var b3 = b3common('handleBackpressure', 20, done)
+  var b3 = b3common('handleBackpressure', 20)
   var t = 8
   b3.open()
   while (t--) b3.b2lrProducer.send(`+${B3.timeMs()} ms handleBackpressure`)
-  setTimeout(() => b3.close(allDone, done), 50)
+  setTimeout(() => { b3.close(); done() }, 50)
 }
 
-function b3common (functionName, timeoutMs, done) {
+function b3common (functionName, timeoutMs) {
   var b3 = new B3({ noSelfTest: true, noDefaultListeners: true })
-  var b2count = 2
   count = 1
   b3.b2lrConsumer.on('token', t => {
     setTimeout(() => {
-      if (!b3.isOpen) return
       b3.b2rlProducer.send(`+${B3.timeMs()} ms echo "${t.message}" back`)
-      if (b3.b2lrConsumer.doneWith(t) && --b2count == 0) done()
+      b3.b2lrConsumer.doneWith(t)
     }, timeoutMs)
   })
   b3.b2rlConsumer.on('token', t => {
     console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
       B3.timeMs(), b3.b2rlConsumer.sid, t.sid, t.message, t.delay)
-    if (b3.b2rlConsumer.doneWith(t) && --b2count == 0) done()
+    b3.b2rlConsumer.doneWith(t)
   })
   return b3
 }

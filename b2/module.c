@@ -42,15 +42,11 @@ static napi_value B2T_Open (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-static inline void B2T_DestroyUVTH (struct B2 * b2) {
+static inline void B2T_DestroyProducerUVTH (struct B2 * b2) {
   uv_mutex_destroy(&b2->tokenProducedMutex); 
-  uv_mutex_destroy(&b2->tokenConsumedMutex); 
   uv_mutex_destroy(&b2->tokenProducingMutex); 
-  uv_mutex_destroy(&b2->tokenConsumingMutex); 
   uv_cond_destroy(&b2->tokenProduced); 
-  uv_cond_destroy(&b2->tokenConsumed); 
   uv_cond_destroy(&b2->tokenProducing); 
-  uv_cond_destroy(&b2->tokenConsuming);
 }
 
 static napi_value B2T_Close (napi_env env, napi_callback_info info) {
@@ -61,37 +57,18 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
 
-  // Stop the producer-consumer threads, destroy the uv threading harness.
+  // Stop the producer thread, destroy its uv threading harness.
   b2->isOpen = 0;
   uv_mutex_lock(&b2->tokenProducingMutex);
   uv_cond_signal(&b2->tokenProducing);
   uv_mutex_unlock(&b2->tokenProducingMutex);
-  uv_mutex_lock(&b2->tokenConsumingMutex);
+  /*uv_mutex_lock(&b2->tokenConsumingMutex);
   uv_cond_signal(&b2->tokenConsuming);
-  uv_mutex_unlock(&b2->tokenConsumingMutex);
+  uv_mutex_unlock(&b2->tokenConsumingMutex);*/
   assert(uv_thread_join(&b2->producerThread) == 0);
-  assert(uv_thread_join(&b2->consumerThread) == 0);
-  B2T_DestroyUVTH(b2);
-
-  // Remove this b2 from md->b2instances, empty the queue of tokens that have not
-  // been produced, free the unproduced tokens and the b2.
-#ifdef DEBUG_PRINTF
-  unsigned int sid = b2->b2t_this.sid;
-#endif
-  struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
-  struct fifo * p = q->out, * r = q->in;
-  p->in = r; r->out = p; queue->size--;
-  while ((q = fifoOut(&b2->producer.tokens2produce))) {
-#ifdef DEBUG_PRINTF
-    printf("B2T_Close sid %u, unproduced token sid %u\n", sid, q->sid);
-#endif
-    free(q);
-  }
-  free(b2);
-#ifdef DEBUG_PRINTF
-  printf("B2T_Close sid %u, md->b2instances.size %zu\n",
-      sid, md->b2instances.size);
-#endif
+  //assert(uv_thread_join(&b2->consumerThread) == 0);
+  B2T_DestroyProducerUVTH(b2);
+  
   return NULL;
 }
 
@@ -177,6 +154,7 @@ static napi_value GetSid (napi_env env, napi_callback_info info) {
   return property;
 }
 
+/*
 static void FinalizeOnClose (napi_env env, void* data, void* context) {
 #ifdef DEBUG_PRINTF
   ModuleData* md = (ModuleData*)data;
@@ -184,13 +162,33 @@ static void FinalizeOnClose (napi_env env, void* data, void* context) {
       md->b2instances.size);
 #endif
 }
+*/
 
 static void FinalizeOnToken (napi_env env, void* data, void* context) {
+  struct B2 * b2 = (struct B2 *)data;
+  ModuleData* md = b2->md;
+
+  // The consumer thread has just stopped, destroy its uv harness.
+  uv_mutex_destroy(&b2->tokenConsumedMutex); 
+  uv_mutex_destroy(&b2->tokenConsumingMutex); 
+  uv_cond_destroy(&b2->tokenConsumed); 
+  uv_cond_destroy(&b2->tokenConsuming);
+
+  // Remove this b2 from md->b2instances, empty the queue of tokens that have not
+  // yet been produced, free the unproduced tokens and the b2.
 #ifdef DEBUG_PRINTF
-  ModuleData* md = (ModuleData*)data;
-  printf("FinalizeOnToken md->b2instances.size: %zu\n", 
-      md->b2instances.size);
+  unsigned int sid = b2->b2t_this.sid;
 #endif
+  struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
+  struct fifo * p = q->out, * r = q->in;
+  p->in = r; r->out = p; queue->size--;
+  while ((q = fifoOut(&b2->producer.tokens2produce))) {
+#ifdef DEBUG_PRINTF
+    printf("FinalizeOnToken sid %u, unproduced token sid %u\n", sid, q->sid);
+#endif
+    free(q);
+  }
+  free(b2);
 }
 
 // This function is responsible for converting the native data coming in from
@@ -223,10 +221,10 @@ void CallJs_onToken(napi_env env, napi_value js_cb, void* context, void* data) {
 
 static napi_value CT_On (napi_env env, napi_callback_info info) {
   size_t argc = 2;
-  napi_value argv[2], this, nameT, nameC;
+  napi_value argv[2], this, nameT; //, nameC;
   ModuleData* md;
   struct B2 * b2;
-  char event[6], descT[] = "b2 token consumer", descC[] = "b2 stop callback";
+  char event[6], descT[] = "b2 token consumer"; //, descC[] = "b2 stop callback";
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
@@ -235,14 +233,14 @@ static napi_value CT_On (napi_env env, napi_callback_info info) {
     assert(napi_ok == napi_create_string_utf8(
           env, descT, NAPI_AUTO_LENGTH, &nameT));
     assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameT,
-          0, 1, md, FinalizeOnToken, b2, CallJs_onToken, &b2->consumer.onToken));
+          0, 1, b2, FinalizeOnToken, b2, CallJs_onToken, &b2->consumer.onToken));
   }
-  else { // create the onClose tsfn
+  /*else { // create the onClose tsfn
     assert(napi_ok == napi_create_string_utf8(
           env, descC, NAPI_AUTO_LENGTH, &nameC));
     assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameC,
           0, 1, md, FinalizeOnClose, b2, 0, &b2->consumer.onClose));
-  }
+  }*/
   return NULL;
 }
 
