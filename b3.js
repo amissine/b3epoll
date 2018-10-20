@@ -1,7 +1,6 @@
 'use strict'
 
 const B2 = require('bindings')('b2')
-var b3Count = 0
 var start = Date.now()
 
 /**
@@ -31,15 +30,12 @@ class B3 {
     this.b2rlProducer = this._b2rl.producer
     this.b2lrConsumer = this._b2lr.consumer
     this.b2rlConsumer = this._b2rl.consumer
-    this.count = b3Count++
-    console.log('B3 this.count: %d', this.count)
     if (this.noDefaultListeners) return
 
     addDefaultListener(this, this.b2lrConsumer)
     addDefaultListener(this, this.b2rlConsumer)
   }
   open () {
-    console.log('B3.open this.count: %d', this.count)
     this._b2lr.open()
     this._b2rl.open()
     if (this.noSelfTest) return
@@ -48,7 +44,6 @@ class B3 {
     selfTest(this.b2rlProducer)
   }
   close () {
-    console.log('B3.close this.count: %d', this.count)
     this._b2rl.close()
     this._b2lr.close()
   }
@@ -59,18 +54,18 @@ class B3 {
 module.exports = B3
 
 function addDefaultListener (that, consumer) {
-  var consumerSid = consumer.sid
-  console.log('+%d ms - addDefaultListeners consumer.sid: %d',
-    B3.timeMs(), consumerSid)
+  // var consumerSid = consumer.sid
+  // console.log('+%d ms addDefaultListeners consumer.sid: %d',
+  //   B3.timeMs(), consumerSid)
   consumer.on('token', t => {
-    console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
-      B3.timeMs(), consumerSid, t.sid, t.message, t.delay)
+    // console.log('+%d ms consumer sid %d, token sid %d, message %s, delay %d µs',
+    //   B3.timeMs(), consumerSid, t.sid, t.message, t.delay)
     consumer.doneWith(t)
   })
 }
 
 function selfTest (producer) {
-  console.log('+%d ms - selfTest producer.sid: %d',
-    B3.timeMs(), producer.sid)
+  // console.log('+%d ms - selfTest producer.sid: %d',
+  //   B3.timeMs(), producer.sid)
   producer.send('- selfTest message sent on ' + new Date())
 }

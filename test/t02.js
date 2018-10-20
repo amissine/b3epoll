@@ -11,7 +11,10 @@ var count = 1
 describe('Basic B3 functionality:', () => {
   it('is bidirectional B2 (bounded buffer)', function (done) {
     if (count++) {
-      assert.object(b3, 'b3')
+      assert.object(b3.b2lrProducer, 'b3.b2lrProducer')
+      assert.object(b3.b2lrConsumer, 'b3.b2lrConsumer')
+      assert.object(b3.b2rlProducer, 'b3.b2rlProducer')
+      assert.object(b3.b2rlConsumer, 'b3.b2rlConsumer')
       done()
     } else this.skip()
   })
@@ -30,7 +33,6 @@ describe('Basic B3 functionality:', () => {
     setTimeout(() => {
       b3.close()
       x.close()
-      console.log('done B3.close test')
       done()
     }, 40)
   }).timeout(200)
@@ -55,7 +57,6 @@ function handleBackpressure (done) {
   setTimeout(() => {
     b3.close()
     b3.isClosed = true
-    // console.log(`+${B3.timeMs()} ms b3.isClosed ${b3.isClosed}`)
     done()
   }, 50)
 }
@@ -63,19 +64,17 @@ function handleBackpressure (done) {
 function b3common (functionName, timeoutMs) {
   var b3 = new B3({ noSelfTest: true, noDefaultListeners: true })
   b3.b2lrConsumer.on('token', t => {
-    console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
-      B3.timeMs(), b3.b2lrConsumer.sid, t.sid, t.message, t.delay)
+    // console.log('+%d ms consumer sid %d, token sid %d message %s, delay %d µs',
+    //   B3.timeMs(), b3.b2lrConsumer.sid, t.sid, t.message, t.delay)
     if (b3.isClosed) {
       b3.b2lrConsumer.doneWith(t)
-      console.log('b3.isClosed')
       return
     }
     setTimeout(() => {
-      console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
-        B3.timeMs(), b3.b2lrConsumer.sid, t.sid, t.message, t.delay)
+      // console.log('+%d ms consumer sid %d, token sid %d message %s, delay %d µs',
+      //   B3.timeMs(), b3.b2lrConsumer.sid, t.sid, t.message, t.delay)
       if (b3.isClosed) {
         b3.b2lrConsumer.doneWith(t)
-        console.log('b3.isClosed 2')
         return
       }
       b3.b2rlProducer.send(`+${B3.timeMs()} ms echo "${t.message}" back`)
@@ -83,8 +82,8 @@ function b3common (functionName, timeoutMs) {
     }, timeoutMs)
   })
   b3.b2rlConsumer.on('token', t => {
-    console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
-      B3.timeMs(), b3.b2rlConsumer.sid, t.sid, t.message, t.delay)
+    // console.log('+%d ms consumer sid %d, token sid %d, message %s, delay %d µs',
+    //   B3.timeMs(), b3.b2rlConsumer.sid, t.sid, t.message, t.delay)
     b3.b2rlConsumer.doneWith(t)
   })
   return b3
