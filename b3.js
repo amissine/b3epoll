@@ -49,8 +49,8 @@ class B3 {
   }
   close () {
     console.log('B3.close this.count: %d', this.count)
-    this._b2lr.close()
     this._b2rl.close()
+    this._b2lr.close()
   }
   static timeMs () {
     return Date.now() - start

@@ -27,7 +27,6 @@ describe('Basic B3 functionality:', () => {
     done()
   })
   it('properly closes and destroys the instances of itself', done => {
-    count = 2
     setTimeout(() => {
       b3.close()
       x.close()
@@ -63,7 +62,6 @@ function handleBackpressure (done) {
 
 function b3common (functionName, timeoutMs) {
   var b3 = new B3({ noSelfTest: true, noDefaultListeners: true })
-  count = 1
   b3.b2lrConsumer.on('token', t => {
     console.log('+%d ms - consumer sid %d, token sid %d, message %s, delay %d µs',
       B3.timeMs(), b3.b2lrConsumer.sid, t.sid, t.message, t.delay)

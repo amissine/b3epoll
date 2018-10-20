@@ -35,8 +35,8 @@ static void consumeToken (TokenType* tt, struct B2 * b2) {
 
 static void produceToken (TokenType* tt, struct B2 * b2) {
   struct fifo* t;
-  if (b2->isOpen && b2->producer.tokens2produce.size == 0)
 #ifdef DEBUG_PRINTF
+  if (b2->isOpen && b2->producer.tokens2produce.size == 0)
     printf("produceToken sid %d, wait for a token from the main thread\n",
         b2->b2t_this.sid);
 #endif
@@ -109,7 +109,7 @@ void produceTokens (void* data) {
 #endif
       uv_mutex_lock(&b2->tokenConsumedMutex);
 
-      // shared Buffer is full
+      // sharedBuffer is full
       while (b2->isOpen &&
           b2->produceCount - b2->consumeCount == b2->sharedBuffer_size)
         uv_cond_wait(&b2->tokenConsumed, &b2->tokenConsumedMutex);
@@ -137,10 +137,6 @@ void consumeTokens (void* data) {
       uv_mutex_unlock(&b2->tokenProducedMutex);
     }
   }
-  /*assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onClose,
-        0, napi_tsfn_blocking));
-  assert(napi_ok == napi_release_threadsafe_function(
-        b2->consumer.onClose, napi_tsfn_release));*/
   assert(napi_ok == napi_release_threadsafe_function(
         b2->consumer.onToken, napi_tsfn_release));
 #ifdef DEBUG_PRINTF

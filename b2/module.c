@@ -141,7 +141,7 @@ static napi_value GetSid (napi_env env, napi_callback_info info) {
 }
 
 static inline void B2T_DestroyUVTH (struct B2 * b2) {
-  uv_mutex_destroy(&b2->tokenProducedMutex); 
+  uv_mutex_destroy(&b2->tokenProducedMutex);
   uv_mutex_destroy(&b2->tokenProducingMutex); 
   uv_cond_destroy(&b2->tokenProduced); 
   uv_cond_destroy(&b2->tokenProducing);
@@ -154,26 +154,30 @@ static inline void B2T_DestroyUVTH (struct B2 * b2) {
 static void FinalizeOnToken (napi_env env, void* data, void* context) {
   struct B2 * b2 = (struct B2 *)data;
   ModuleData* md = b2->md;
+#ifdef DEBUG_FinalizeOnToken
+  unsigned int sid = b2->b2t_this.sid;
+#endif
+
+  // Wait until the producer-consumer threads are stopped.
+  assert(uv_thread_join(&b2->producerThread) == 0);
+  assert(uv_thread_join(&b2->consumerThread) == 0);
 
   // Destroy the uv harness.
   B2T_DestroyUVTH(b2);
 
   // Remove this b2 from md->b2instances, empty the queue of tokens that have not
   // yet been produced, free the unproduced tokens and the b2.
-#ifdef DEBUG_PRINTF
-  unsigned int sid = b2->b2t_this.sid;
-#endif
   struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
   struct fifo * p = q->out, * r = q->in;
   p->in = r; r->out = p; queue->size--;
   while ((q = fifoOut(&b2->producer.tokens2produce))) {
-#ifdef DEBUG_PRINTF
+#ifdef DEBUG_FinalizeOnToken
     printf("FinalizeOnToken sid %u, unproduced token sid %u\n", sid, q->sid);
 #endif
     free(q);
   }
   free(b2);
-#ifdef DEBUG_PRINTF
+#ifdef DEBUG_FinalizeOnToken
   printf("FinalizeOnToken freed b2 for sid %u\n", sid);
 #endif
 }
@@ -211,7 +215,7 @@ static napi_value CT_On (napi_env env, napi_callback_info info) {
   napi_value argv[2], this, nameT; //, nameC;
   ModuleData* md;
   struct B2 * b2;
-  char event[6], descT[] = "b2 token consumer"; //, descC[] = "b2 stop callback";
+  char event[6], descT[] = "b2 token consumer";
 
   assert(napi_ok == napi_get_cb_info(env, info, &argc, argv, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
@@ -222,12 +226,6 @@ static napi_value CT_On (napi_env env, napi_callback_info info) {
     assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameT,
           0, 1, b2, FinalizeOnToken, b2, CallJs_onToken, &b2->consumer.onToken));
   }
-  /*else { // create the onClose tsfn
-    assert(napi_ok == napi_create_string_utf8(
-          env, descC, NAPI_AUTO_LENGTH, &nameC));
-    assert(napi_ok == napi_create_threadsafe_function(env, argv[1], 0, nameC,
-          0, 1, md, FinalizeOnClose, b2, 0, &b2->consumer.onClose));
-  }*/
   return NULL;
 }
 
