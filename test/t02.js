@@ -40,7 +40,27 @@ describe('Basic B3 functionality:', () => {
   ).timeout(200)
   it('handles the backpressure nicely', done => handleBackpressure(done)
   ).timeout(200)
+  it('writes a file on disk with libuv', done => libuvWriteFile(done)
+  ).timeout(200)
+  it('copies the file with libuv', done => libuvCopyFile(done)
+  ).timeout(200)
+  it('copies the file with epoll', function (done) {
+    if (process.platform === 'linux') epollCopyFile(done)
+    else this.skip()
+  }).timeout(200)
 })
+
+function epollCopyFile (done) {
+  done()
+}
+
+function libuvCopyFile (done) {
+  done()
+}
+
+function libuvWriteFile (done) {
+  done()
+}
 
 function runEchoExchange (done) {
   var b3 = b3common('runEchoExchange', 1)
