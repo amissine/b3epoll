@@ -10,22 +10,35 @@ var start = Date.now()
 class B3 {
   /**
    * @param {Object} opts
+   * @param {unsigned int} opts.b2lrProducer - producer in the left to right
+   *                                           direction
+   * @param {unsigned int} opts.b2lrConsumer - consumer in the left to right
+   *                                           direction
+   * @param {unsigned int} opts.b2rlProducer - producer in the right to left
+   *                                           direction
+   * @param {unsigned int} opts.b2rlConsumer - consumer in the right to left
+   *                                           direction
    * @param {boolean} opts.noDefaultListeners - the caller will provide all the
    *                                            listeners
    * @param {boolean} opts.noSelfTest - the caller will be sending all the
    *                                    messages
-   * @param {Object} left
-   * @param {Object} right
+   * @param {unsigned int} opts.bufsize - the shared buffer size, 2^n instances
+   *                                      of TokenType (see b2/b2.h)
    */
   constructor (opts = {
+    b2lrProducer: 0, // B3.defaults
+    b2lrConsumer: 0, // B3.defaults
+    b2rlProducer: 0, // B3.defaults
+    b2rlConsumer: 0, // B3.defaults
     noDefaultListeners: false,
-    noSelfTest: false
-  }, left, right) {
+    noSelfTest: false,
+    bufsize: 16 // 2^n
+  }) {
     this.noDefaultListeners = opts.noDefaultListeners || false
     this.noSelfTest = opts.noSelfTest || false
 
-    this._b2lr = B2.newB2(left, right)
-    this._b2rl = B2.newB2(right, left)
+    this._b2lr = B2.newB2(opts.b2lrProducer, opts.b2lrConsumer, opts.bufsize)
+    this._b2rl = B2.newB2(opts.b2rlProducer, opts.b2rlConsumer, opts.bufsize)
     this.b2lrProducer = this._b2lr.producer
     this.b2rlProducer = this._b2rl.producer
     this.b2lrConsumer = this._b2lr.consumer
@@ -44,13 +57,18 @@ class B3 {
     selfTest(this.b2rlProducer)
   }
   close () {
-    this._b2rl.close()
     this._b2lr.close()
+    this._b2rl.close()
   }
   static timeMs () {
     return Date.now() - start
   }
 }
+B3.defaults = 0
+B3.randomDataGenerator = 1
+B3.libuvFileWriter = 2
+B3.customLrRlNotifier = 3
+
 module.exports = B3
 
 function addDefaultListener (that, consumer) {

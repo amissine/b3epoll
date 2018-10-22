@@ -336,27 +336,14 @@ static inline void InitModuleData (napi_env env, ModuleData* md) {
       &md->ct_constructor, 3, pCT, propNamesCT, gettersCT, methodsCT);
 }
 
-// When the JavaScript side calls newB2 (for example, as follows:
-//
-//   var b2 = B2.newB2(producerConfigData, consumerConfigData)
-//   b2.consumer.on('token', t => {
-//     console.log(t)
-//     b2.consumer.doneWith(t)
-//   })
-//   b2.consumer.on('close', () => {
-//     console.log('The b2 threads are stopped now.')
-//   })
-//   b2.open()
-//   b2.producer.send('Hello World')
-//   setTimeout(() => b2.close(), 500)
-//
-// ), this function constructs the shared buffer and binds the producer/consumer
+// When the JavaScript side calls newB2,
+// this function constructs the shared buffer and binds the producer/consumer
 // pair to it. It returns back the JavaScript object that can be used to 
 // start and stop the producer/consumer pair of threads, and to send and receive
-// messages between the producer and the consumer.
+// messages from the producer to the consumer.
 napi_value NewB2 (napi_env env, napi_callback_info info) {
-  size_t argc = 2;
-  napi_value argv[2], this;
+  size_t argc = 3;
+  napi_value argv[3], this;
   ModuleData* md;
   struct B2 *b2;
 

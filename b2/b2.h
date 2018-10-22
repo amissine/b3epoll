@@ -134,21 +134,25 @@ static inline napi_value newInstance (napi_env env, napi_ref c, void* data,
   return result;
 }
 
+static inline uint32_t uint32 (napi_env env, napi_value unsignedInt) {
+  uint32_t result;
+  assert(napi_ok == napi_get_value_uint32(env, unsignedInt, &result));
+  return result;
+}
+
 static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* argv, 
     ModuleData* md) {
-  struct B2Config {
-    size_t sharedBuffer_size;
-  } b2Config;
-  if (argc == 2 && is_undefined(env, *argv++) && is_undefined(env, *argv)) {
+  assert(argc == 3); 
+  uint32_t producerId = uint32(env, *argv++);
+  uint32_t consumerId = uint32(env, *argv++);
+  size_t sharedBuffer_size = uint32(env, *argv);
 #ifdef DEBUG_PRINTF
-    printf("newB2native: no config data, using defaults");
+  printf("newB2native producerId %u, consumerId %u, sharedBuffer_size %zu",
+      producerId, consumerId, sharedBuffer_size);
 #endif
-    b2Config.sharedBuffer_size = 4; // must be 2^n
-  }
-  size_t b2size = sizeof(struct B2) +
-    sizeof(TokenType) * b2Config.sharedBuffer_size;
+  size_t b2size = sizeof(struct B2) + sizeof(TokenType) * sharedBuffer_size;
   struct B2 * b2 = (struct B2 *)memset(malloc(b2size), 0, b2size);
-  b2->sharedBuffer_size = b2Config.sharedBuffer_size;
+  b2->sharedBuffer_size = sharedBuffer_size;
   b2->md = md;
   fifoIn(&md->b2instances, &b2->b2t_this);
   assert(uv_mutex_init(&b2->tokenProducedMutex) == 0);

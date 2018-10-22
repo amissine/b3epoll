@@ -59,7 +59,21 @@ function libuvCopyFile (done) {
 }
 
 function libuvWriteFile (done) {
-  done()
+  var b3 = new B3({
+    bufsize: 256,
+    noSelfTest: true,
+    noDefaultListeners: true,
+    b2lrProducer: B3.randomDataGenerator,
+    b2lrConsumer: B3.libuvFileWriter,
+    b2rlProducer: B3.customLrRlNotifier,
+    b2rlConsumer: B3.defaults
+  })
+  b3.b2rlConsumer.on('token', t => {
+    b3.b2rlConsumer.doneWith(t)
+    b3.close()
+    done()
+  })
+  b3.open()
 }
 
 function runEchoExchange (done) {
@@ -82,7 +96,15 @@ function handleBackpressure (done) {
 }
 
 function b3common (functionName, timeoutMs) {
-  var b3 = new B3({ noSelfTest: true, noDefaultListeners: true })
+  var b3 = new B3({
+    bufsize: 4,
+    b2lrProducer: B3.defaults,
+    b2lrConsumer: B3.defaults,
+    b2rlProducer: B3.defaults,
+    b2rlConsumer: B3.defaults,
+    noSelfTest: true,
+    noDefaultListeners: true
+  })
   b3.b2lrConsumer.on('token', t => {
     // console.log('+%d ms consumer sid %d, token sid %d message %s, delay %d µs',
     //   B3.timeMs(), b3.b2lrConsumer.sid, t.sid, t.message, t.delay)
