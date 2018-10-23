@@ -67,12 +67,18 @@ typedef struct {
   // multiple b2 instances, they all must operate on the same TokenType.
 } ModuleData;
 
+struct B2;
+
 struct Producer {
   struct fifo tokens2produce;
+  void (*cleanupOnClose) (struct B2 *);
+  void (*produceToken) (TokenType* tt, struct B2 * b2);
 };
 
 struct Consumer {
-  napi_threadsafe_function onToken, onClose;
+  napi_threadsafe_function onToken;
+  void (*cleanupOnClose) (struct B2 *);
+  void (*consumeToken) (TokenType* tt, struct B2 * b2);
 };
 
 struct B2 {
@@ -138,35 +144,6 @@ static inline uint32_t uint32 (napi_env env, napi_value unsignedInt) {
   uint32_t result;
   assert(napi_ok == napi_get_value_uint32(env, unsignedInt, &result));
   return result;
-}
-
-static inline struct B2 * newB2native (napi_env env, size_t argc, napi_value* argv, 
-    ModuleData* md) {
-  assert(argc == 3); 
-  uint32_t producerId = uint32(env, *argv++);
-  uint32_t consumerId = uint32(env, *argv++);
-  size_t sharedBuffer_size = uint32(env, *argv);
-#ifdef DEBUG_PRINTF
-  printf("newB2native producerId %u, consumerId %u, sharedBuffer_size %zu",
-      producerId, consumerId, sharedBuffer_size);
-#endif
-  size_t b2size = sizeof(struct B2) + sizeof(TokenType) * sharedBuffer_size;
-  struct B2 * b2 = (struct B2 *)memset(malloc(b2size), 0, b2size);
-  b2->sharedBuffer_size = sharedBuffer_size;
-  b2->md = md;
-  fifoIn(&md->b2instances, &b2->b2t_this);
-  assert(uv_mutex_init(&b2->tokenProducedMutex) == 0);
-  assert(uv_mutex_init(&b2->tokenConsumedMutex) == 0);
-  assert(uv_mutex_init(&b2->tokenProducingMutex) == 0);
-  assert(uv_mutex_init(&b2->tokenConsumingMutex) == 0);
-  assert(uv_cond_init(&b2->tokenProduced) == 0);
-  assert(uv_cond_init(&b2->tokenConsumed) == 0);
-  assert(uv_cond_init(&b2->tokenProducing) == 0);
-  assert(uv_cond_init(&b2->tokenConsuming) == 0);
-#ifdef DEBUG_PRINTF
-  printf("; b2->b2t_this.sid %u\n", b2->b2t_this.sid);
-#endif
-  return b2;
 }
 
 void produceTokens (void*);

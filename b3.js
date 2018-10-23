@@ -64,10 +64,10 @@ class B3 {
     return Date.now() - start
   }
 }
-B3.defaults = 0
-B3.randomDataGenerator = 1
-B3.libuvFileWriter = 2
-B3.customLrRlNotifier = 3
+B3.defaults = 0 // producer and consumer Ids
+B3.randomDataGenerator = 1 // producerId
+B3.libuvFileWriter = 1 // consumerId
+B3.customLrRlNotifier = 2 // producerId
 
 module.exports = B3
 

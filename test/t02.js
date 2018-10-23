@@ -8,8 +8,8 @@ var b3 = new B3()
 var x
 var count = 1
 
-describe('Basic B3 functionality:', () => {
-  it('is bidirectional B2 (bounded buffer)', function (done) {
+describe('A B3 module:', () => {
+  it('is a bidirectional B2 (bounded buffer)', function (done) {
     if (count++) {
       assert.object(b3.b2lrProducer, 'b3.b2lrProducer')
       assert.object(b3.b2lrConsumer, 'b3.b2lrConsumer')
@@ -69,6 +69,8 @@ function libuvWriteFile (done) {
     b2rlConsumer: B3.defaults
   })
   b3.b2rlConsumer.on('token', t => {
+    console.log('+%d ms consumer sid %d, token sid %d, message "%s", delay %d µs',
+      B3.timeMs(), b3.b2rlConsumer.sid, t.sid, t.message, t.delay)
     b3.b2rlConsumer.doneWith(t)
     b3.close()
     done()

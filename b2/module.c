@@ -336,6 +336,168 @@ static inline void InitModuleData (napi_env env, ModuleData* md) {
       &md->ct_constructor, 3, pCT, propNamesCT, gettersCT, methodsCT);
 }
 
+static void producer_cleanupOnClose_default (struct B2 *b2) {
+#ifdef DEBUG_PRINTF
+  printf("producer_cleanupOnClose_default sid %d, returning\n", b2->b2t_this.sid);
+#endif
+}
+
+static void producer_produceToken_default (TokenType* tt, struct B2 * b2) {
+  struct fifo* t;
+#ifdef DEBUG_PRINTF
+  if (b2->isOpen && b2->producer.tokens2produce.size == 0)
+    printf("produceToken sid %d, wait for a token from the main thread\n",
+        b2->b2t_this.sid);
+#endif
+  uv_mutex_lock(&b2->tokenProducingMutex);
+
+  if (b2->producer.tokens2produce.size > 0) {
+
+    // Token(s) have been produced by the main thread,
+    // remove the first token from the queue.
+    t = fifoOut(&b2->producer.tokens2produce);
+    if (t) { // if it's not NULL, copy it to the shared buffer and return
+      memcpy(tt, t, sizeof(TokenType));
+      free(t);
+      uv_mutex_unlock(&b2->tokenProducingMutex);
+#ifdef DEBUG_PRINTF
+      printf("produceToken sid %d, token sid %d shared, returning 1\n", 
+          b2->b2t_this.sid, tt->tt_this.sid);
+#endif
+      return;
+    }
+  }
+
+  // Otherwise, wait for a token from the main thread.
+  while (b2->isOpen && b2->producer.tokens2produce.size == 0)
+    uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
+
+  if (b2->isOpen) {
+    t = fifoOut(&b2->producer.tokens2produce); // remove it from the queue,
+    memcpy(tt, t, sizeof(TokenType)); // copy to the shared buffer and free it
+    free(t);
+  }
+  uv_mutex_unlock(&b2->tokenProducingMutex);
+#ifdef DEBUG_PRINTF
+  printf("produceToken sid %d, token sid %d shared, returning 2\n", 
+      b2->b2t_this.sid, tt->tt_this.sid);
+#endif
+}
+
+static void consumer_cleanupOnClose_default (struct B2 * b2) {
+  assert(napi_ok == napi_release_threadsafe_function(
+        b2->consumer.onToken, napi_tsfn_release));
+#ifdef DEBUG_PRINTF
+  printf("consumer_cleanupOnClose_default sid %d, returning\n", b2->b2t_this.sid);
+#endif
+}
+
+static void consumer_consumeToken_default (TokenType* tt, struct B2 * b2) {
+
+  // Set the consumer - producer delay in the tt->theDelay field.
+  long long int p = tt->theDelay;
+  struct timeval timer_us;
+  if (gettimeofday(&timer_us, NULL) == 0) {
+    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
+      (long long int) timer_us.tv_usec - p;
+  }
+  else tt->theDelay = -1ll;
+
+  // Pass the consumed token to the 'onToken' JavaScript function,
+  // then wait until the main thread is done with the token.
+  assert(napi_ok == napi_call_threadsafe_function(b2->consumer.onToken,
+        tt, napi_tsfn_blocking));
+  if (tt->theDelay != 0ll) {
+#ifdef DEBUG_PRINTF
+    printf("consumeToken sid %d, wait for the shared token sid %d to be consumed\n",
+        b2->b2t_this.sid, tt->tt_this.sid);
+#endif
+    uv_mutex_lock(&b2->tokenConsumingMutex);
+
+    // Wait for the token to be consumed
+    while (/*b2->isOpen && */tt->theDelay != 0ll)
+      uv_cond_wait(&b2->tokenConsuming, &b2->tokenConsumingMutex);
+    uv_mutex_unlock(&b2->tokenConsumingMutex);
+  }
+#ifdef DEBUG_PRINTF
+  printf("consumeToken sid %d, shared token sid %d consumed\n", 
+      b2->b2t_this.sid, tt->tt_this.sid);
+#endif
+}
+
+static void producer_cleanupOnClose_randomDataGenerator (struct B2 * b2) {
+}
+
+static void producer_cleanupOnClose_customLrRlNotifier (struct B2 * b2) {
+}
+
+static void consumer_cleanupOnClose_libuvFileWriter (struct B2 * b2) {
+}
+
+static void
+producer_produceToken_randomDataGenerator (TokenType* tt, struct B2 * b2) {
+}
+
+static void
+producer_produceToken_customLrRlNotifier (TokenType* tt, struct B2 * b2) {
+}
+
+static void
+consumer_consumeToken_libuvFileWriter (TokenType* tt, struct B2 * b2) {
+}
+
+void (*producer_cleanupOnClose[]) (struct B2 *) = {
+  &producer_cleanupOnClose_default,
+  &producer_cleanupOnClose_randomDataGenerator,
+  &producer_cleanupOnClose_customLrRlNotifier
+};
+void (*producer_produceToken[]) (TokenType* tt, struct B2 * b2) = {
+  &producer_produceToken_default,
+  &producer_produceToken_randomDataGenerator,
+  &producer_produceToken_customLrRlNotifier
+};
+void (*consumer_cleanupOnClose[]) (struct B2 *) = {
+  &consumer_cleanupOnClose_default,
+  &consumer_cleanupOnClose_libuvFileWriter
+};
+void (*consumer_consumeToken[]) (TokenType* tt, struct B2 * b2) = {
+  &consumer_consumeToken_default,
+  &consumer_consumeToken_libuvFileWriter
+};
+
+static inline struct B2 *
+newB2native (napi_env env, size_t argc, napi_value* argv, ModuleData* md) {
+  assert(argc == 3); 
+  uint32_t producerId = uint32(env, *argv++);
+  uint32_t consumerId = uint32(env, *argv++);
+  size_t sharedBuffer_size = uint32(env, *argv);
+#ifdef DEBUG_PRINTF
+  printf("newB2native producerId %u, consumerId %u, sharedBuffer_size %zu",
+      producerId, consumerId, sharedBuffer_size);
+#endif
+  size_t b2size = sizeof(struct B2) + sizeof(TokenType) * sharedBuffer_size;
+  struct B2 * b2 = (struct B2 *)memset(malloc(b2size), 0, b2size);
+  b2->sharedBuffer_size = sharedBuffer_size;
+  b2->producer.cleanupOnClose = producer_cleanupOnClose[producerId];
+  b2->producer.produceToken = producer_produceToken[producerId];
+  b2->consumer.cleanupOnClose = consumer_cleanupOnClose[consumerId];
+  b2->consumer.consumeToken = consumer_consumeToken[consumerId];
+  b2->md = md;
+  fifoIn(&md->b2instances, &b2->b2t_this);
+  assert(uv_mutex_init(&b2->tokenProducedMutex) == 0);
+  assert(uv_mutex_init(&b2->tokenConsumedMutex) == 0);
+  assert(uv_mutex_init(&b2->tokenProducingMutex) == 0);
+  assert(uv_mutex_init(&b2->tokenConsumingMutex) == 0);
+  assert(uv_cond_init(&b2->tokenProduced) == 0);
+  assert(uv_cond_init(&b2->tokenConsumed) == 0);
+  assert(uv_cond_init(&b2->tokenProducing) == 0);
+  assert(uv_cond_init(&b2->tokenConsuming) == 0);
+#ifdef DEBUG_PRINTF
+  printf("; b2->b2t_this.sid %u\n", b2->b2t_this.sid);
+#endif
+  return b2;
+}
+
 // When the JavaScript side calls newB2,
 // this function constructs the shared buffer and binds the producer/consumer
 // pair to it. It returns back the JavaScript object that can be used to 
