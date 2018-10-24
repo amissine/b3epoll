@@ -88,6 +88,19 @@ napi_value ProducerTypeConstructor (napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+static inline void initTokenType (TokenType* tt, char* theMessage) {
+  struct timeval timer_us;
+  if (gettimeofday(&timer_us, NULL) == 0) {
+    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
+      (long long int) timer_us.tv_usec;
+  }
+  else tt->theDelay = -1ll;
+  
+  size_t i0 = sizeof(tt->theMessage) - 1;
+  strncpy(tt->theMessage, theMessage, i0);
+  tt->theMessage[i0] = '\0';
+} 
+
 static napi_value PT_Send (napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv, this;
@@ -446,40 +459,70 @@ static void
 consumer_consumeToken_libuvFileWriter (TokenType* tt, struct B2 * b2) {
 }
 
+static void producer_initOnOpen_default (struct B2 * b2) {
+}
+
+static void producer_initOnOpen_randomDataGenerator (struct B2 * b2) {
+}
+
+static void producer_initOnOpen_customLrRlNotifier (struct B2 * b2) {
+}
+
+static void consumer_initOnOpen_default (struct B2 * b2) {
+}
+
+static void consumer_initOnOpen_libuvFileWriter (struct B2 * b2) {
+#ifdef DEBUG_PRINTF
+  printf("consumer_initOnOpen_libuvFileWriter file %s\n", b2->data);
+#endif
+}
+
+void (*producer_initOnOpen[]) (struct B2 *) = {
+  producer_initOnOpen_default,
+  producer_initOnOpen_randomDataGenerator,
+  producer_initOnOpen_customLrRlNotifier
+};
 void (*producer_cleanupOnClose[]) (struct B2 *) = {
-  &producer_cleanupOnClose_default,
-  &producer_cleanupOnClose_randomDataGenerator,
-  &producer_cleanupOnClose_customLrRlNotifier
+  producer_cleanupOnClose_default,
+  producer_cleanupOnClose_randomDataGenerator,
+  producer_cleanupOnClose_customLrRlNotifier
 };
 void (*producer_produceToken[]) (TokenType* tt, struct B2 * b2) = {
-  &producer_produceToken_default,
-  &producer_produceToken_randomDataGenerator,
-  &producer_produceToken_customLrRlNotifier
+  producer_produceToken_default,
+  producer_produceToken_randomDataGenerator,
+  producer_produceToken_customLrRlNotifier
+};
+void (*consumer_initOnOpen[]) (struct B2 *) = {
+  consumer_initOnOpen_default,
+  consumer_initOnOpen_libuvFileWriter
 };
 void (*consumer_cleanupOnClose[]) (struct B2 *) = {
-  &consumer_cleanupOnClose_default,
-  &consumer_cleanupOnClose_libuvFileWriter
+  consumer_cleanupOnClose_default,
+  consumer_cleanupOnClose_libuvFileWriter
 };
 void (*consumer_consumeToken[]) (TokenType* tt, struct B2 * b2) = {
-  &consumer_consumeToken_default,
-  &consumer_consumeToken_libuvFileWriter
+  consumer_consumeToken_default,
+  consumer_consumeToken_libuvFileWriter
 };
 
 static inline struct B2 *
 newB2native (napi_env env, size_t argc, napi_value* argv, ModuleData* md) {
-  assert(argc == 3); 
+  assert(argc == 4); 
   uint32_t producerId = uint32(env, *argv++);
   uint32_t consumerId = uint32(env, *argv++);
-  size_t sharedBuffer_size = uint32(env, *argv);
-#ifdef DEBUG_PRINTF
-  printf("newB2native producerId %u, consumerId %u, sharedBuffer_size %zu",
-      producerId, consumerId, sharedBuffer_size);
-#endif
+  char data[256];
+  assert(napi_ok == napi_get_value_string_utf8(env, *argv++, data, 256, &argc));
+  assert(argc < 256);
+  size_t sharedBuffer_size = uint32(env, *argv), i0 = sizeof(data) - 1;
   size_t b2size = sizeof(struct B2) + sizeof(TokenType) * sharedBuffer_size;
   struct B2 * b2 = (struct B2 *)memset(malloc(b2size), 0, b2size);
+  strncpy(b2->data, data, i0);
+  b2->data[i0] = '\0';
   b2->sharedBuffer_size = sharedBuffer_size;
+  b2->producer.initOnOpen = producer_initOnOpen[producerId];
   b2->producer.cleanupOnClose = producer_cleanupOnClose[producerId];
   b2->producer.produceToken = producer_produceToken[producerId];
+  b2->consumer.initOnOpen = consumer_initOnOpen[consumerId];
   b2->consumer.cleanupOnClose = consumer_cleanupOnClose[consumerId];
   b2->consumer.consumeToken = consumer_consumeToken[consumerId];
   b2->md = md;
@@ -493,7 +536,8 @@ newB2native (napi_env env, size_t argc, napi_value* argv, ModuleData* md) {
   assert(uv_cond_init(&b2->tokenProducing) == 0);
   assert(uv_cond_init(&b2->tokenConsuming) == 0);
 #ifdef DEBUG_PRINTF
-  printf("; b2->b2t_this.sid %u\n", b2->b2t_this.sid);
+  printf("newB2native pid %u, cid %u, b2data '%s', sB_size %zu; b2sid %u\n",
+      producerId, consumerId, b2->data, sharedBuffer_size, b2->b2t_this.sid);
 #endif
   return b2;
 }
@@ -504,8 +548,8 @@ newB2native (napi_env env, size_t argc, napi_value* argv, ModuleData* md) {
 // start and stop the producer/consumer pair of threads, and to send and receive
 // messages from the producer to the consumer.
 napi_value NewB2 (napi_env env, napi_callback_info info) {
-  size_t argc = 3;
-  napi_value argv[3], this;
+  size_t argc = 4;
+  napi_value argv[4], this;
   ModuleData* md;
   struct B2 *b2;
 

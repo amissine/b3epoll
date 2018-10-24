@@ -11,10 +11,10 @@ var count = 1
 describe('A B3 module:', () => {
   it('is a bidirectional B2 (bounded buffer)', function (done) {
     if (count++) {
-      assert.object(b3.b2lrProducer, 'b3.b2lrProducer')
-      assert.object(b3.b2lrConsumer, 'b3.b2lrConsumer')
-      assert.object(b3.b2rlProducer, 'b3.b2rlProducer')
-      assert.object(b3.b2rlConsumer, 'b3.b2rlConsumer')
+      assert.object(b3.l2rProducer, 'b3.l2rProducer')
+      assert.object(b3.l2rConsumer, 'b3.l2rConsumer')
+      assert.object(b3.r2lProducer, 'b3.r2lProducer')
+      assert.object(b3.r2lConsumer, 'b3.r2lConsumer')
       done()
     } else this.skip()
   })
@@ -59,21 +59,26 @@ function libuvCopyFile (done) {
 }
 
 function libuvWriteFile (done) {
-  var b3 = new B3({
-    bufsize: 256,
-    noSelfTest: true,
-    noDefaultListeners: true,
-    b2lrProducer: B3.randomDataGenerator,
-    b2lrConsumer: B3.libuvFileWriter,
-    b2rlProducer: B3.customLrRlNotifier,
-    b2rlConsumer: B3.defaults
-  })
-  b3.b2rlConsumer.on('token', t => {
+  var b3 = new B3(
+    B3.randomDataGenerator, // l2rProducer
+    B3.libuvFileWriter, // l2rConsumer
+    B3.customLrRlNotifier, // r2lProducer
+    B3.defaults, // r2lProducer
+    256, // l2rBufsize
+    2, // r2lBufsize
+    '/tmp/bigfile.t02' // l2rData
+  )
+  var notDone = true
+
+  b3.r2lConsumer.on('token', t => {
     console.log('+%d ms consumer sid %d, token sid %d, message "%s", delay %d µs',
-      B3.timeMs(), b3.b2rlConsumer.sid, t.sid, t.message, t.delay)
-    b3.b2rlConsumer.doneWith(t)
-    b3.close()
-    done()
+      B3.timeMs(), b3.r2lConsumer.sid, t.sid, t.message, t.delay)
+    b3.r2lConsumer.doneWith(t)
+    if (notDone) {
+      b3.close()
+      done()
+      notDone = false
+    }
   })
   b3.open()
 }
@@ -81,7 +86,7 @@ function libuvWriteFile (done) {
 function runEchoExchange (done) {
   var b3 = b3common('runEchoExchange', 1)
   b3.open()
-  b3.b2lrProducer.send(`+${B3.timeMs()} ms runEchoExchange started`)
+  b3.l2rProducer.send(`+${B3.timeMs()} ms runEchoExchange started`)
   setTimeout(() => { b3.close(); b3.isClosed = true; done() }, 50)
 }
 
@@ -89,7 +94,7 @@ function handleBackpressure (done) {
   var b3 = b3common('handleBackpressure', 20)
   var t = 8
   b3.open()
-  while (t--) b3.b2lrProducer.send(`+${B3.timeMs()} ms handleBackpressure`)
+  while (t--) b3.l2rProducer.send(`+${B3.timeMs()} ms handleBackpressure`)
   setTimeout(() => {
     b3.close()
     b3.isClosed = true
@@ -98,37 +103,29 @@ function handleBackpressure (done) {
 }
 
 function b3common (functionName, timeoutMs) {
-  var b3 = new B3({
-    bufsize: 4,
-    b2lrProducer: B3.defaults,
-    b2lrConsumer: B3.defaults,
-    b2rlProducer: B3.defaults,
-    b2rlConsumer: B3.defaults,
-    noSelfTest: true,
-    noDefaultListeners: true
-  })
-  b3.b2lrConsumer.on('token', t => {
+  var b3 = new B3(0, 0, 0, 0, 4, 4, '', '', true, true)
+  b3.l2rConsumer.on('token', t => {
     // console.log('+%d ms consumer sid %d, token sid %d message %s, delay %d µs',
     //   B3.timeMs(), b3.b2lrConsumer.sid, t.sid, t.message, t.delay)
     if (b3.isClosed) {
-      b3.b2lrConsumer.doneWith(t)
+      b3.l2rConsumer.doneWith(t)
       return
     }
     setTimeout(() => {
       // console.log('+%d ms consumer sid %d, token sid %d message %s, delay %d µs',
       //   B3.timeMs(), b3.b2lrConsumer.sid, t.sid, t.message, t.delay)
       if (b3.isClosed) {
-        b3.b2lrConsumer.doneWith(t)
+        b3.l2rConsumer.doneWith(t)
         return
       }
-      b3.b2rlProducer.send(`+${B3.timeMs()} ms echo "${t.message}" back`)
-      b3.b2lrConsumer.doneWith(t)
+      b3.r2lProducer.send(`+${B3.timeMs()} ms echo "${t.message}" back`)
+      b3.l2rConsumer.doneWith(t)
     }, timeoutMs)
   })
-  b3.b2rlConsumer.on('token', t => {
+  b3.r2lConsumer.on('token', t => {
     // console.log('+%d ms consumer sid %d, token sid %d, message %s, delay %d µs',
     //   B3.timeMs(), b3.b2rlConsumer.sid, t.sid, t.message, t.delay)
-    b3.b2rlConsumer.doneWith(t)
+    b3.r2lConsumer.doneWith(t)
   })
   return b3
 }

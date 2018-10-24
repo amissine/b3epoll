@@ -4,7 +4,7 @@ static void producer (struct B2 * b2) {
   void (*pt) (TokenType* tt, struct B2 * b2) = b2->producer.produceToken;
   while (b2->isOpen) {
     if (b2->produceCount - b2->consumeCount == b2->sharedBuffer_size) break;
-    (*pt)(&b2->sharedBuffer[b2->produceCount % b2->sharedBuffer_size], b2);
+    pt(&b2->sharedBuffer[b2->produceCount % b2->sharedBuffer_size], b2);
     if (b2->produceCount++ - b2->consumeCount == 0) {
       uv_mutex_lock(&b2->tokenProducedMutex);
       uv_cond_signal(&b2->tokenProduced);
@@ -18,7 +18,7 @@ static void consumer (struct B2 * b2) {
   while (b2->isOpen) {
     if (b2->produceCount == b2->consumeCount) // sharedBuffer is empty
       break;
-    (*ct)(&b2->sharedBuffer[b2->consumeCount % b2->sharedBuffer_size], b2);
+    ct(&b2->sharedBuffer[b2->consumeCount % b2->sharedBuffer_size], b2);
     if (b2->produceCount - b2->consumeCount++ == b2->sharedBuffer_size) {
       uv_mutex_lock(&b2->tokenConsumedMutex);
       uv_cond_signal(&b2->tokenConsumed);
@@ -29,6 +29,8 @@ static void consumer (struct B2 * b2) {
 
 void produceTokens (void* data) {
   struct B2 * b2 = (struct B2 *) data;
+  
+  (*b2->producer.initOnOpen)(b2);
   while (b2->isOpen) {
     producer(b2);
     if (b2->produceCount - b2->consumeCount == b2->sharedBuffer_size) {
@@ -49,6 +51,8 @@ void produceTokens (void* data) {
 
 void consumeTokens (void* data) {
   struct B2 * b2 = (struct B2 *) data;
+
+  (*b2->consumer.initOnOpen)(b2);
   while (b2->isOpen) {
     consumer(b2);
     if (b2->produceCount == b2->consumeCount) { // sharedBuffer is empty

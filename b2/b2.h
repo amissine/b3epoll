@@ -42,18 +42,6 @@ typedef struct {
   char theMessage[128];
   long long int theDelay;
 } TokenType;
-static inline void initTokenType (TokenType* tt, char* theMessage) {
-  struct timeval timer_us;
-  if (gettimeofday(&timer_us, NULL) == 0) {
-    tt->theDelay = ((long long int) timer_us.tv_sec) * 1000000ll +
-      (long long int) timer_us.tv_usec;
-  }
-  else tt->theDelay = -1ll;
-  
-  size_t i0 = sizeof(tt->theMessage) - 1;
-  strncpy(tt->theMessage, theMessage, i0);
-  tt->theMessage[i0] = '\0';
-} 
 
 // The data associated with an instance of the module. This takes the place of
 // global static variables, while allowing multiple instances of the module to
@@ -71,12 +59,14 @@ struct B2;
 
 struct Producer {
   struct fifo tokens2produce;
+  void (*initOnOpen) (struct B2 *);
   void (*cleanupOnClose) (struct B2 *);
   void (*produceToken) (TokenType* tt, struct B2 * b2);
 };
 
 struct Consumer {
   napi_threadsafe_function onToken;
+  void (*initOnOpen) (struct B2 *);
   void (*cleanupOnClose) (struct B2 *);
   void (*consumeToken) (TokenType* tt, struct B2 * b2);
 };
@@ -88,6 +78,7 @@ struct B2 {
   uv_cond_t tokenProduced, tokenConsumed, tokenProducing, tokenConsuming;
   uv_mutex_t tokenProducedMutex, tokenConsumedMutex,
              tokenProducingMutex, tokenConsumingMutex;
+  char data[256];
   struct Producer producer;
   struct Consumer consumer;
   volatile bool isOpen;
