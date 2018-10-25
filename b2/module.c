@@ -1,8 +1,17 @@
 #include "b2.h"
 
+static inline void nowUs (long long int * delay) {
+  struct timeval timer_us;
+  if (gettimeofday(&timer_us, NULL) == 0) {
+    *delay = ((long long int) timer_us.tv_sec) * 1000000ll +
+      (long long int) timer_us.tv_usec;
+  }
+  else *delay = -1ll;
+}
+
 static void FreeModuleData (napi_env env, void* data, void* hint) {
-#ifdef DEBUG_PRINTF
   printf("FreeModuleData started\n");
+#ifdef DEBUG_PRINTF
 #endif
   ModuleData* md = (ModuleData*) data;
   assert(napi_ok == napi_delete_reference(env, md->b2t_constructor));
@@ -448,10 +457,6 @@ static void consumer_cleanupOnClose_libuvFileWriter (struct B2 * b2) {
 }
 
 static void
-producer_produceToken_randomDataGenerator (TokenType* tt, struct B2 * b2) {
-}
-
-static void
 producer_produceToken_customLrRlNotifier (TokenType* tt, struct B2 * b2) {
 }
 
@@ -463,18 +468,57 @@ static void producer_initOnOpen_default (struct B2 * b2) {
 }
 
 static void producer_initOnOpen_randomDataGenerator (struct B2 * b2) {
+  TokenType* initToken =
+    (TokenType*)memset(malloc(sizeof(TokenType)), 0, sizeof(TokenType));
+
+  // Initialize the b2->producer.tokens2produce queue and add initToken to it.
+  // The initToken will be freed at cleanupOnClose.
+  fifoInit(&b2->producer.tokens2produce);
+  fifoIn(&b2->producer.tokens2produce, &initToken->tt_this);
+
+  // Set initToken->tt_this.sid to the value of the FILESIZE macro - when 
+  // the sid reaches zero, all tokens will be produced and the b2 will be 
+  // closed.
+  initToken->tt_this.sid = FILESIZE;
+
+  // Set initToken->theDelay to the current time in µs.
+  nowUs(&initToken->theDelay);
+
+#ifdef DEBUG_PRINTF
+  printf("producer_initOnOpen_randomDataGenerator:\n- size %zu, sid %d, t %lldµs\n",
+      b2->producer.tokens2produce.size,
+      initToken->tt_this.sid,
+      initToken->theDelay);
+#endif
 }
 
-static void producer_initOnOpen_customLrRlNotifier (struct B2 * b2) {
-}
+static void
+producer_produceToken_randomDataGenerator (TokenType* tt, struct B2 * b2) {
+  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+  nowUs(&tt->theDelay); tt->theDelay -= initToken->theDelay;
+  *tt->theMessage = '\0';
+  tt->tt_this.sid = initToken->tt_this.sid--;
 
-static void consumer_initOnOpen_default (struct B2 * b2) {
+  if (initToken->tt_this.sid == 0) { // close b2
+    b2->isOpen = false;
+  }
+
+  printf("producer_produceToken_randomDataGenerator:\n- '%s', sid %d, ∆ %lldµs\n",
+      tt->theMessage,
+      tt->tt_this.sid,
+      tt->theDelay);
 }
 
 static void consumer_initOnOpen_libuvFileWriter (struct B2 * b2) {
 #ifdef DEBUG_PRINTF
   printf("consumer_initOnOpen_libuvFileWriter file %s\n", b2->data);
 #endif
+}
+
+static void producer_initOnOpen_customLrRlNotifier (struct B2 * b2) {
+}
+
+static void consumer_initOnOpen_default (struct B2 * b2) {
 }
 
 void (*producer_initOnOpen[]) (struct B2 *) = {

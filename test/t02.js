@@ -71,7 +71,7 @@ function libuvWriteFile (done) {
   var notDone = true
 
   b3.r2lConsumer.on('token', t => {
-    console.log('+%d ms consumer sid %d, token sid %d, message "%s", delay %d µs',
+    console.log('+%d ms consumer sid %d, token sid %d, message "%s", delay %dµs',
       B3.timeMs(), b3.r2lConsumer.sid, t.sid, t.message, t.delay)
     b3.r2lConsumer.doneWith(t)
     if (notDone) {

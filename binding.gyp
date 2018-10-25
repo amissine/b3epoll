@@ -7,6 +7,7 @@
         "./b2/module.c" 
       ],
       "defines": [
+        "FILESIZE=1000",
         "NAPI_EXPERIMENTAL"
       ]
     }
