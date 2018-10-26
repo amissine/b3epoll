@@ -12,7 +12,7 @@ struct fifo {
   struct fifo* in;
   struct fifo* out;
   unsigned int sid; // sequence id
-  size_t size; // number of tokens in the queue
+  volatile size_t size; // number of tokens in the queue
 };
 static inline struct fifo* fifoInit (struct fifo* q) {
   q->in = q; q->out = q; q->sid = 0; q->size = 0; return q;

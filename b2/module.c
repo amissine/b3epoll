@@ -460,24 +460,19 @@ static void
 producer_produceToken_customLrRlNotifier (TokenType* tt, struct B2 * b2) {
 }
 
-static void
-consumer_consumeToken_libuvFileWriter (TokenType* tt, struct B2 * b2) {
-}
-
 static void producer_initOnOpen_default (struct B2 * b2) {
 }
 
-static void producer_initOnOpen_randomDataGenerator (struct B2 * b2) {
+static inline void configure_initToken (struct B2 * b2) {
   TokenType* initToken =
     (TokenType*)memset(malloc(sizeof(TokenType)), 0, sizeof(TokenType));
 
-  // Initialize the b2->producer.tokens2produce queue and add initToken to it.
-  // The initToken will be freed at cleanupOnClose.
-  fifoInit(&b2->producer.tokens2produce);
+  // Add initToken to the b2->producer.tokens2produce queue (the queue has
+  // been initialized by NewB2). The initToken will be freed by cleanupOnClose.
   fifoIn(&b2->producer.tokens2produce, &initToken->tt_this);
 
   // Set initToken->tt_this.sid to the value of the FILESIZE macro - when 
-  // the sid reaches zero, all tokens will be produced and the b2 will be 
+  // the sid reaches zero, all the tokens will be produced and the b2 will be 
   // closed.
   initToken->tt_this.sid = FILESIZE;
 
@@ -485,34 +480,81 @@ static void producer_initOnOpen_randomDataGenerator (struct B2 * b2) {
   nowUs(&initToken->theDelay);
 
 #ifdef DEBUG_PRINTF
-  printf("producer_initOnOpen_randomDataGenerator:\n- size %zu, sid %d, t %lldµs\n",
+  printf("configure_initToken:\n- size %zu, sid %d, t %lldµs\n",
       b2->producer.tokens2produce.size,
       initToken->tt_this.sid,
       initToken->theDelay);
 #endif
+
+  // Use initToken->theMessage memory (up to 128 bytes) to hold pointers to 
+  // uv_fs_t open_req, close_req, write_req objects; allocate memory for
+  // these objects. The objects will be freed by cleanupOnClose.
+  uv_fs_t ** uv_fs = (uv_fs_t **) initToken->theMessage;
+  int i = 2;
+  while (i-- > -1) uv_fs[i] = (uv_fs_t *) malloc(sizeof(uv_fs_t));
+}
+
+static inline void initOnOpen (struct B2 * b2) {
+  uv_mutex_lock(&b2->tokenProducingMutex);
+  if (fifoEmpty(&b2->producer.tokens2produce)) configure_initToken(b2);
+  uv_mutex_unlock(&b2->tokenProducingMutex);
+}
+
+static void producer_initOnOpen_randomDataGenerator (struct B2 * b2) {
+  initOnOpen(b2);
 }
 
 static void
 producer_produceToken_randomDataGenerator (TokenType* tt, struct B2 * b2) {
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+
   nowUs(&tt->theDelay); tt->theDelay -= initToken->theDelay;
   *tt->theMessage = '\0';
-  tt->tt_this.sid = initToken->tt_this.sid--;
+  tt->tt_this.sid = FILESIZE - initToken->tt_this.sid--;
+  sprintf(tt->theMessage, "sid %d, ∆ %lldµs", tt->tt_this.sid, tt->theDelay);
 
-  if (initToken->tt_this.sid == 0) { // close b2
-    b2->isOpen = false;
+  printf("producer_produceToken_randomDataGenerator '%s'\n", tt->theMessage);
+
+  if (initToken->tt_this.sid == 0) { // wait for the consumer to close the b2
+    uv_mutex_lock(&b2->tokenProducingMutex);
+    while (b2->isOpen) 
+      uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
+    uv_mutex_unlock(&b2->tokenProducingMutex);
+
+    printf("producer_produceToken_randomDataGenerator returning\n");
   }
-
-  printf("producer_produceToken_randomDataGenerator:\n- '%s', sid %d, ∆ %lldµs\n",
-      tt->theMessage,
-      tt->tt_this.sid,
-      tt->theDelay);
 }
 
 static void consumer_initOnOpen_libuvFileWriter (struct B2 * b2) {
+  initOnOpen(b2);
+  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+  uv_fs_t ** uv_fs = (uv_fs_t **) initToken->theMessage;
+  uv_fs_t * open_req = uv_fs[0];
+
+  assert(0 < uv_fs_open( // uv_default_loop()
+        NULL, open_req, b2->data, 
+        O_CREAT|O_WRONLY, 0600, NULL));
+  // uv_run(uv_default_loop(), UV_RUN_DEFAULT);
 #ifdef DEBUG_PRINTF
-  printf("consumer_initOnOpen_libuvFileWriter file %s\n", b2->data);
 #endif
+  printf("consumer_initOnOpen_libuvFileWriter:\n\tfile '%s', FD %zu\n", 
+      b2->data, open_req->result);
+}
+
+static void
+consumer_consumeToken_libuvFileWriter (TokenType* tt, struct B2 * b2) {
+  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+  uv_fs_t ** uv_fs = (uv_fs_t **) initToken->theMessage;
+  uv_fs_t * open_req = uv_fs[0], * write_req = uv_fs[2];
+  uv_buf_t uv_buf;
+  uv_buf.base = tt->theMessage; uv_buf.len = strlen(tt->theMessage);
+
+  printf("consumer_consumeToken_libuvFileWriter FD %zu\n", open_req->result);
+
+  int rc = uv_fs_write(NULL, write_req, open_req->result, &uv_buf, 1, -1, NULL);
+  if (rc) printf("consumer_consumeToken_libuvFileWriter rc %d: %s\n", 
+      rc, uv_strerror(rc));
+  assert(0 == rc);
 }
 
 static void producer_initOnOpen_customLrRlNotifier (struct B2 * b2) {
