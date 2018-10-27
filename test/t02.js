@@ -3,12 +3,19 @@
 'use strict'
 
 const assert = require('assert-plus')
+const { execSync } = require('child_process')
 const B3 = require('../b3')
+
 var b3 = new B3()
 var x
 var count = 1
+var bigfile = '/tmp/bigfile.t02'
+var bigfileCopy = '/tmp/bigfileCopy.t02'
 
 describe('A B3 module:', () => {
+  before(removeFiles)
+  // after(removeFiles)
+
   it('is a bidirectional B2 (bounded buffer)', function (done) {
     if (count++) {
       assert.object(b3.l2rProducer, 'b3.l2rProducer')
@@ -40,9 +47,9 @@ describe('A B3 module:', () => {
   ).timeout(200)
   it('handles the backpressure nicely', done => handleBackpressure(done)
   ).timeout(200)
-  it('writes a file on disk with libuv', done => libuvWriteFile(done)
-  ).timeout(200)
-  it('copies the file with libuv', done => libuvCopyFile(done)
+  it('writes a file on disk with blocking IO', done => bioWriteFile(done)
+  ).timeout(20000)
+  it('copies the file with blocking IO', done => bioCopyFile(done)
   ).timeout(200)
   it('copies the file with epoll', function (done) {
     if (process.platform === 'linux') epollCopyFile(done)
@@ -54,25 +61,25 @@ function epollCopyFile (done) {
   done()
 }
 
-function libuvCopyFile (done) {
+function bioCopyFile (done) {
   done()
 }
 
-function libuvWriteFile (done) {
+function bioWriteFile (done) {
   var b3 = new B3(
     B3.randomDataGenerator, // l2rProducer
     B3.libuvFileWriter, // l2rConsumer
-    B3.customLrRlNotifier, // r2lProducer
     B3.defaults, // r2lProducer
+    B3.defaults, // r2lConsumer
     256, // l2rBufsize
     2, // r2lBufsize
-    '/tmp/bigfile.t02' // l2rData
+    bigfile // l2rData
   )
   var notDone = true
 
   b3.r2lConsumer.on('token', t => {
-    console.log('+%d ms consumer sid %d, token sid %d, message "%s", delay %dµs',
-      B3.timeMs(), b3.r2lConsumer.sid, t.sid, t.message, t.delay)
+    // console.log('+%d ms consumer sid %d, token sid %d, message "%s", delay %dµs',
+    //   B3.timeMs(), b3.r2lConsumer.sid, t.sid, t.message, t.delay)
     b3.r2lConsumer.doneWith(t)
     if (notDone) {
       b3.close()
@@ -81,6 +88,11 @@ function libuvWriteFile (done) {
     }
   })
   b3.open()
+}
+
+function removeFiles () {
+  // console.log(`Removing files '${bigfile}' and '${bigfileCopy}'`)
+  execSync(`rm -f ${bigfile}; rm -f ${bigfileCopy}`)
 }
 
 function runEchoExchange (done) {

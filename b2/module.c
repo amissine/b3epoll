@@ -10,15 +10,56 @@ static inline void nowUs (long long int * delay) {
 }
 
 static void FreeModuleData (napi_env env, void* data, void* hint) {
-  printf("FreeModuleData started\n");
 #ifdef DEBUG_PRINTF
 #endif
+  printf("FreeModuleData started\n");
   ModuleData* md = (ModuleData*) data;
   assert(napi_ok == napi_delete_reference(env, md->b2t_constructor));
   assert(napi_ok == napi_delete_reference(env, md->pt_constructor));
   assert(napi_ok == napi_delete_reference(env, md->ct_constructor));
   assert(napi_ok == napi_delete_reference(env, md->tt_constructor));
   free(data);
+}
+
+static inline void B2T_DestroyUVTH (struct B2 * b2) {
+  uv_mutex_destroy(&b2->tokenProducedMutex);
+  uv_mutex_destroy(&b2->tokenProducingMutex); 
+  uv_cond_destroy(&b2->tokenProduced); 
+  uv_cond_destroy(&b2->tokenProducing);
+  uv_mutex_destroy(&b2->tokenConsumedMutex); 
+  uv_mutex_destroy(&b2->tokenConsumingMutex); 
+  uv_cond_destroy(&b2->tokenConsumed); 
+  uv_cond_destroy(&b2->tokenConsuming);
+}
+
+static void Finalize (struct B2 * b2) {
+  ModuleData* md = b2->md;
+#ifdef DEBUG_PRINTF
+  unsigned int sid = b2->b2t_this.sid;
+#endif
+
+  // Wait until the producer-consumer threads are stopped.
+  assert(uv_thread_join(&b2->producerThread) == 0);
+  assert(uv_thread_join(&b2->consumerThread) == 0);
+
+  // Destroy the uv harness.
+  B2T_DestroyUVTH(b2);
+
+  // Remove this b2 from md->b2instances, empty the queue of tokens that have not
+  // yet been produced, free the unproduced tokens and the b2.
+  struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
+  struct fifo * p = q->out, * r = q->in;
+  p->in = r; r->out = p; queue->size--;
+  while ((q = fifoOut(&b2->producer.tokens2produce))) {
+#ifdef DEBUG_PRINTF
+    printf("Finalize sid %u, unproduced token sid %u\n", sid, q->sid);
+#endif
+    free(q);
+  }
+  free(b2);
+#ifdef DEBUG_PRINTF
+  printf("Finalize freed b2 for sid %u\n", sid);
+#endif
 }
 
 // Constructor for instances of the `B2Type` class. This doesn't need to do
@@ -59,10 +100,18 @@ static napi_value B2T_Close (napi_env env, napi_callback_info info) {
   assert(napi_ok == napi_get_cb_info(env, info, 0, 0, &this, (void*)&md));
   assert(napi_ok == napi_unwrap(env, this, (void*)&b2));
 
-  b2->isOpen = 0;
-  uv_mutex_lock(&b2->tokenProducingMutex);
-  uv_cond_signal(&b2->tokenProducing);
-  uv_mutex_unlock(&b2->tokenProducingMutex);
+  if (b2->isOpen) {
+    b2->isOpen = 0;
+    uv_mutex_lock(&b2->tokenProducingMutex);
+    uv_cond_signal(&b2->tokenProducing);
+    uv_mutex_unlock(&b2->tokenProducingMutex);
+  }
+  else {
+#ifdef DEBUG_PRINTF
+    printf("B2T_Close sid %u\n", b2->b2t_this.sid);
+#endif
+    Finalize(b2);
+  }
   
   return NULL;
 }
@@ -162,46 +211,10 @@ static napi_value GetSid (napi_env env, napi_callback_info info) {
   return property;
 }
 
-static inline void B2T_DestroyUVTH (struct B2 * b2) {
-  uv_mutex_destroy(&b2->tokenProducedMutex);
-  uv_mutex_destroy(&b2->tokenProducingMutex); 
-  uv_cond_destroy(&b2->tokenProduced); 
-  uv_cond_destroy(&b2->tokenProducing);
-  uv_mutex_destroy(&b2->tokenConsumedMutex); 
-  uv_mutex_destroy(&b2->tokenConsumingMutex); 
-  uv_cond_destroy(&b2->tokenConsumed); 
-  uv_cond_destroy(&b2->tokenConsuming);
-}
-
 static void FinalizeOnToken (napi_env env, void* data, void* context) {
   struct B2 * b2 = (struct B2 *)data;
-  ModuleData* md = b2->md;
-#ifdef DEBUG_FinalizeOnToken
-  unsigned int sid = b2->b2t_this.sid;
-#endif
 
-  // Wait until the producer-consumer threads are stopped.
-  assert(uv_thread_join(&b2->producerThread) == 0);
-  assert(uv_thread_join(&b2->consumerThread) == 0);
-
-  // Destroy the uv harness.
-  B2T_DestroyUVTH(b2);
-
-  // Remove this b2 from md->b2instances, empty the queue of tokens that have not
-  // yet been produced, free the unproduced tokens and the b2.
-  struct fifo * q = &b2->b2t_this, * queue = &md->b2instances;
-  struct fifo * p = q->out, * r = q->in;
-  p->in = r; r->out = p; queue->size--;
-  while ((q = fifoOut(&b2->producer.tokens2produce))) {
-#ifdef DEBUG_FinalizeOnToken
-    printf("FinalizeOnToken sid %u, unproduced token sid %u\n", sid, q->sid);
-#endif
-    free(q);
-  }
-  free(b2);
-#ifdef DEBUG_FinalizeOnToken
-  printf("FinalizeOnToken freed b2 for sid %u\n", sid);
-#endif
+  Finalize(b2);
 }
 
 // This function is responsible for converting the native data coming in from
@@ -373,9 +386,9 @@ static void producer_produceToken_default (TokenType* tt, struct B2 * b2) {
 #endif
   uv_mutex_lock(&b2->tokenProducingMutex);
 
-  if (b2->producer.tokens2produce.size > 0) {
+  if (b2->producer.tokens2produce.size > 0) { // the queue has tokens to produce
 
-    // Token(s) have been produced by the main thread,
+    // Token(s) have been produced by another thread,
     // remove the first token from the queue.
     t = fifoOut(&b2->producer.tokens2produce);
     if (t) { // if it's not NULL, copy it to the shared buffer and return
@@ -390,7 +403,7 @@ static void producer_produceToken_default (TokenType* tt, struct B2 * b2) {
     }
   }
 
-  // Otherwise, wait for a token from the main thread.
+  // Otherwise, wait for a token from another thread.
   while (b2->isOpen && b2->producer.tokens2produce.size == 0)
     uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
 
@@ -437,7 +450,7 @@ static void consumer_consumeToken_default (TokenType* tt, struct B2 * b2) {
     uv_mutex_lock(&b2->tokenConsumingMutex);
 
     // Wait for the token to be consumed
-    while (/*b2->isOpen && */tt->theDelay != 0ll)
+    while (tt->theDelay != 0ll)
       uv_cond_wait(&b2->tokenConsuming, &b2->tokenConsumingMutex);
     uv_mutex_unlock(&b2->tokenConsumingMutex);
   }
@@ -448,16 +461,33 @@ static void consumer_consumeToken_default (TokenType* tt, struct B2 * b2) {
 }
 
 static void producer_cleanupOnClose_randomDataGenerator (struct B2 * b2) {
-}
-
-static void producer_cleanupOnClose_customLrRlNotifier (struct B2 * b2) {
+#ifdef DEBUG_PRINTF
+  printf("producer_cleanupOnClose_randomDataGenerator\n");
+#endif
 }
 
 static void consumer_cleanupOnClose_libuvFileWriter (struct B2 * b2) {
-}
+  TokenType * initToken = (TokenType*)fifoOut(&b2->producer.tokens2produce),
+     * tt = memset(malloc(sizeof(*tt)), 0, sizeof(*tt));
+  int * fd = (int *) initToken->theMessage;
+  long long int now, started = initToken->theDelay;
+  ModuleData* md = b2->md;
+  struct B2 * b2r2l = (struct B2 *) md->b2instances.in;
+  char msg[128];
 
-static void
-producer_produceToken_customLrRlNotifier (TokenType* tt, struct B2 * b2) {
+  assert(0 == close(*fd));
+  free(initToken);
+
+  nowUs(&now);
+  sprintf(msg, "Wrote %d messages in %lldµs\n", FILESIZE, now - started);
+  initTokenType(tt, msg);
+  uv_mutex_lock(&b2r2l->tokenProducingMutex);
+  fifoIn(&b2r2l->producer.tokens2produce, &tt->tt_this);
+  uv_cond_signal(&b2r2l->tokenProducing);
+  uv_mutex_unlock(&b2r2l->tokenProducingMutex);
+#ifdef DEBUG_PRINTF
+  printf("consumer_cleanupOnClose_libuvFileWriter\n");
+#endif
 }
 
 static void producer_initOnOpen_default (struct B2 * b2) {
@@ -468,7 +498,8 @@ static inline void configure_initToken (struct B2 * b2) {
     (TokenType*)memset(malloc(sizeof(TokenType)), 0, sizeof(TokenType));
 
   // Add initToken to the b2->producer.tokens2produce queue (the queue has
-  // been initialized by NewB2). The initToken will be freed by cleanupOnClose.
+  // been initialized by NewB2). The initToken will be freed by 
+  // consumer_cleanupOnClose_libuvFileWriter.
   fifoIn(&b2->producer.tokens2produce, &initToken->tt_this);
 
   // Set initToken->tt_this.sid to the value of the FILESIZE macro - when 
@@ -485,13 +516,6 @@ static inline void configure_initToken (struct B2 * b2) {
       initToken->tt_this.sid,
       initToken->theDelay);
 #endif
-
-  // Use initToken->theMessage memory (up to 128 bytes) to hold pointers to 
-  // uv_fs_t open_req, close_req, write_req objects; allocate memory for
-  // these objects. The objects will be freed by cleanupOnClose.
-  uv_fs_t ** uv_fs = (uv_fs_t **) initToken->theMessage;
-  int i = 2;
-  while (i-- > -1) uv_fs[i] = (uv_fs_t *) malloc(sizeof(uv_fs_t));
 }
 
 static inline void initOnOpen (struct B2 * b2) {
@@ -508,6 +532,15 @@ static void
 producer_produceToken_randomDataGenerator (TokenType* tt, struct B2 * b2) {
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
 
+  if (initToken->tt_this.sid == 0) { // wait until b2 is closed
+    uv_mutex_lock(&b2->tokenProducingMutex);
+    while (b2->isOpen) uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
+    uv_mutex_unlock(&b2->tokenProducingMutex);
+#ifdef DEBUG_PRINTF
+    printf("producer_produceToken_randomDataGenerator is being closed\n");
+#endif
+    return;
+  }
   nowUs(&tt->theDelay); tt->theDelay -= initToken->theDelay;
   *tt->theMessage = '\0';
   tt->tt_this.sid = FILESIZE - initToken->tt_this.sid--;
@@ -515,14 +548,22 @@ producer_produceToken_randomDataGenerator (TokenType* tt, struct B2 * b2) {
 #ifdef DEBUG_PRINTF
   printf("producer_produceToken_randomDataGenerator '%s'\n", tt->theMessage);
 #endif
-  if (initToken->tt_this.sid == 0) { // wait for the consumer to close the b2
-    uv_mutex_lock(&b2->tokenProducingMutex);
-    while (b2->isOpen) 
-      uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
-    uv_mutex_unlock(&b2->tokenProducingMutex);
+}
+
+static void
+consumer_consumeToken_libuvFileWriter (TokenType* tt, struct B2 * b2) {
+  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+  int * fd = (int *) initToken->theMessage;
+  ssize_t written = write(*fd, tt->theMessage, strlen(tt->theMessage));
+  assert(-1 < written);
 #ifdef DEBUG_PRINTF
-    printf("producer_produceToken_randomDataGenerator returning\n");
+  printf("consumer_consumeToken_libuvFileWriter '%s'\n", tt->theMessage);
 #endif
+  if (FILESIZE - tt->tt_this.sid == 1) {
+    uv_mutex_lock(&b2->tokenProducingMutex);
+    b2->isOpen = 0;
+    uv_cond_signal(&b2->tokenProducing);
+    uv_mutex_unlock(&b2->tokenProducingMutex);
   }
 }
 
@@ -533,19 +574,8 @@ static void consumer_initOnOpen_libuvFileWriter (struct B2 * b2) {
 
   *fd = open(b2->data, O_CREAT|O_WRONLY, 0600);
 #ifdef DEBUG_PRINTF
-#endif
   printf("consumer_initOnOpen_libuvFileWriter %s %d\n", b2->data, *fd);
-}
-
-static void
-consumer_consumeToken_libuvFileWriter (TokenType* tt, struct B2 * b2) {
-  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
-  int * fd = (int *) initToken->theMessage;
-  ssize_t written = write(*fd, tt->theMessage, strlen(tt->theMessage));
-  assert(-1 < written);
-}
-
-static void producer_initOnOpen_customLrRlNotifier (struct B2 * b2) {
+#endif
 }
 
 static void consumer_initOnOpen_default (struct B2 * b2) {
@@ -553,18 +583,15 @@ static void consumer_initOnOpen_default (struct B2 * b2) {
 
 void (*producer_initOnOpen[]) (struct B2 *) = {
   producer_initOnOpen_default,
-  producer_initOnOpen_randomDataGenerator,
-  producer_initOnOpen_customLrRlNotifier
+  producer_initOnOpen_randomDataGenerator
 };
 void (*producer_cleanupOnClose[]) (struct B2 *) = {
   producer_cleanupOnClose_default,
-  producer_cleanupOnClose_randomDataGenerator,
-  producer_cleanupOnClose_customLrRlNotifier
+  producer_cleanupOnClose_randomDataGenerator
 };
 void (*producer_produceToken[]) (TokenType* tt, struct B2 * b2) = {
   producer_produceToken_default,
-  producer_produceToken_randomDataGenerator,
-  producer_produceToken_customLrRlNotifier
+  producer_produceToken_randomDataGenerator
 };
 void (*consumer_initOnOpen[]) (struct B2 *) = {
   consumer_initOnOpen_default,
