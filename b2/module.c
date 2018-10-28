@@ -42,7 +42,7 @@ static void Finalize (struct B2 * b2) {
   assert(uv_thread_join(&b2->producerThread) == 0);
   assert(uv_thread_join(&b2->consumerThread) == 0);
 
-  // Destroy the uv harness.
+  // Destroy the uv threading harness.
   B2T_DestroyUVTH(b2);
 
   // Remove this b2 from md->b2instances, empty the queue of tokens that have not
@@ -460,13 +460,13 @@ static void consumer_consumeToken_default (TokenType* tt, struct B2 * b2) {
 #endif
 }
 
-static void producer_cleanupOnClose_randomDataGenerator (struct B2 * b2) {
+static void producer_cleanupOnClose_sidSetter (struct B2 * b2) {
 #ifdef DEBUG_PRINTF
-  printf("producer_cleanupOnClose_randomDataGenerator\n");
+  printf("producer_cleanupOnClose_sidSetter\n");
 #endif
 }
 
-static void consumer_cleanupOnClose_libuvFileWriter (struct B2 * b2) {
+static void consumer_cleanupOnClose_bioFileWriter (struct B2 * b2) {
   TokenType * initToken = (TokenType*)fifoOut(&b2->producer.tokens2produce),
      * tt = memset(malloc(sizeof(*tt)), 0, sizeof(*tt));
   int * fd = (int *) initToken->theMessage;
@@ -486,20 +486,20 @@ static void consumer_cleanupOnClose_libuvFileWriter (struct B2 * b2) {
   uv_cond_signal(&b2r2l->tokenProducing);
   uv_mutex_unlock(&b2r2l->tokenProducingMutex);
 #ifdef DEBUG_PRINTF
-  printf("consumer_cleanupOnClose_libuvFileWriter\n");
+  printf("consumer_cleanupOnClose_bioFileWriter\n");
 #endif
 }
 
 static void producer_initOnOpen_default (struct B2 * b2) {
 }
 
-static inline void configure_initToken (struct B2 * b2) {
+static inline void configure_b2 (struct B2 * b2) {
   TokenType* initToken =
     (TokenType*)memset(malloc(sizeof(TokenType)), 0, sizeof(TokenType));
 
   // Add initToken to the b2->producer.tokens2produce queue (the queue has
   // been initialized by NewB2). The initToken will be freed by 
-  // consumer_cleanupOnClose_libuvFileWriter.
+  // consumer_cleanupOnClose_bioFileWriter.
   fifoIn(&b2->producer.tokens2produce, &initToken->tt_this);
 
   // Set initToken->tt_this.sid to the value of the FILESIZE macro - when 
@@ -510,8 +510,11 @@ static inline void configure_initToken (struct B2 * b2) {
   // Set initToken->theDelay to the current time in µs.
   nowUs(&initToken->theDelay);
 
+  // Replace first '\n' with '\0' in b2->data;
+  *strchr(b2->data, '\n') = '\0';
+
 #ifdef DEBUG_PRINTF
-  printf("configure_initToken:\n- size %zu, sid %d, t %lldµs\n",
+  printf("configure_b2:\n- size %zu, sid %d, t %lldµs\n",
       b2->producer.tokens2produce.size,
       initToken->tt_this.sid,
       initToken->theDelay);
@@ -520,16 +523,26 @@ static inline void configure_initToken (struct B2 * b2) {
 
 static inline void initOnOpen (struct B2 * b2) {
   uv_mutex_lock(&b2->tokenProducingMutex);
-  if (fifoEmpty(&b2->producer.tokens2produce)) configure_initToken(b2);
+  if (fifoEmpty(&b2->producer.tokens2produce)) configure_b2(b2);
   uv_mutex_unlock(&b2->tokenProducingMutex);
 }
 
-static void producer_initOnOpen_randomDataGenerator (struct B2 * b2) {
+static void producer_initOnOpen_bioFileReader (struct B2 * b2) {
+}
+
+static void producer_cleanupOnClose_bioFileReader (struct B2 * b2) {
+}
+
+static void
+producer_produceToken_bioFileReader (TokenType* tt, struct B2 * b2) {
+}
+
+static void producer_initOnOpen_sidSetter (struct B2 * b2) {
   initOnOpen(b2);
 }
 
 static void
-producer_produceToken_randomDataGenerator (TokenType* tt, struct B2 * b2) {
+producer_produceToken_sidSetter (TokenType* tt, struct B2 * b2) {
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
 
   if (initToken->tt_this.sid == 0) { // wait until b2 is closed
@@ -537,29 +550,44 @@ producer_produceToken_randomDataGenerator (TokenType* tt, struct B2 * b2) {
     while (b2->isOpen) uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
     uv_mutex_unlock(&b2->tokenProducingMutex);
 #ifdef DEBUG_PRINTF
-    printf("producer_produceToken_randomDataGenerator is being closed\n");
+    printf("producer_produceToken_sidSetter is being closed\n");
 #endif
     return;
   }
-  nowUs(&tt->theDelay); tt->theDelay -= initToken->theDelay;
-  *tt->theMessage = '\0';
+  
+  // Set sid.
   tt->tt_this.sid = FILESIZE - initToken->tt_this.sid--;
-  sprintf(tt->theMessage, "sid %d, ∆ %lldµs\n", tt->tt_this.sid, tt->theDelay);
+
+  // If this token is the last one, set the end-of-transmission
+  // indicator in tt->theDelay.
+  *((char *)&tt->theDelay) = initToken->tt_this.sid == 0 ? '\004' : '\0';
+
 #ifdef DEBUG_PRINTF
-  printf("producer_produceToken_randomDataGenerator '%s'\n", tt->theMessage);
+  printf("producer_produceToken_sidSetter sid %d\nn", tt->tt_this.sid);
 #endif
 }
 
 static void
-consumer_consumeToken_libuvFileWriter (TokenType* tt, struct B2 * b2) {
+consumer_consumeToken_bioFileWriter (TokenType* tt, struct B2 * b2) {
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
   int * fd = (int *) initToken->theMessage;
+  char eot = *((char *)&tt->theDelay); // the end-of-transmission indicator
+
+  // Set theDelay.
+  nowUs(&tt->theDelay); tt->theDelay -= initToken->theDelay;
+
+  // Set theMessage.
+  sprintf(tt->theMessage, "sid %d, ∆ %lldµs\n", tt->tt_this.sid, tt->theDelay);
+
+  // Write theMessage.
   ssize_t written = write(*fd, tt->theMessage, strlen(tt->theMessage));
   assert(-1 < written);
+
 #ifdef DEBUG_PRINTF
-  printf("consumer_consumeToken_libuvFileWriter '%s'\n", tt->theMessage);
+  printf("consumer_consumeToken_bioFileWriter '%s'\n", tt->theMessage);
 #endif
-  if (FILESIZE - tt->tt_this.sid == 1) {
+
+  if (eot) { // close the b2 internally
     uv_mutex_lock(&b2->tokenProducingMutex);
     b2->isOpen = 0;
     uv_cond_signal(&b2->tokenProducing);
@@ -567,15 +595,17 @@ consumer_consumeToken_libuvFileWriter (TokenType* tt, struct B2 * b2) {
   }
 }
 
-static void consumer_initOnOpen_libuvFileWriter (struct B2 * b2) {
+static void consumer_initOnOpen_bioFileWriter (struct B2 * b2) {
   initOnOpen(b2);
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
   int * fd = (int *) initToken->theMessage;
+  char * file = b2->data;
 
-  *fd = open(b2->data, O_CREAT|O_WRONLY, 0600);
+  file += strlen(file) + 1;
+  *fd = open(file, O_CREAT|O_WRONLY, 0600);
 #ifdef DEBUG_PRINTF
-  printf("consumer_initOnOpen_libuvFileWriter %s %d\n", b2->data, *fd);
 #endif
+  printf("consumer_initOnOpen_bioFileWriter '%s' %d\n", file, *fd);
 }
 
 static void consumer_initOnOpen_default (struct B2 * b2) {
@@ -583,27 +613,30 @@ static void consumer_initOnOpen_default (struct B2 * b2) {
 
 void (*producer_initOnOpen[]) (struct B2 *) = {
   producer_initOnOpen_default,
-  producer_initOnOpen_randomDataGenerator
+  producer_initOnOpen_sidSetter,
+  producer_initOnOpen_bioFileReader
 };
 void (*producer_cleanupOnClose[]) (struct B2 *) = {
   producer_cleanupOnClose_default,
-  producer_cleanupOnClose_randomDataGenerator
+  producer_cleanupOnClose_sidSetter,
+  producer_cleanupOnClose_bioFileReader
 };
 void (*producer_produceToken[]) (TokenType* tt, struct B2 * b2) = {
   producer_produceToken_default,
-  producer_produceToken_randomDataGenerator
+  producer_produceToken_sidSetter,
+  producer_produceToken_bioFileReader
 };
 void (*consumer_initOnOpen[]) (struct B2 *) = {
   consumer_initOnOpen_default,
-  consumer_initOnOpen_libuvFileWriter
+  consumer_initOnOpen_bioFileWriter
 };
 void (*consumer_cleanupOnClose[]) (struct B2 *) = {
   consumer_cleanupOnClose_default,
-  consumer_cleanupOnClose_libuvFileWriter
+  consumer_cleanupOnClose_bioFileWriter
 };
 void (*consumer_consumeToken[]) (TokenType* tt, struct B2 * b2) = {
   consumer_consumeToken_default,
-  consumer_consumeToken_libuvFileWriter
+  consumer_consumeToken_bioFileWriter
 };
 
 static inline struct B2 *

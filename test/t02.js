@@ -50,7 +50,7 @@ describe('A B3 module:', () => {
   it('writes a file on disk with blocking IO', done => bioWriteFile(done)
   ).timeout(20000)
   it('copies the file with blocking IO', done => bioCopyFile(done)
-  ).timeout(200)
+  ).timeout(20000)
   it('copies the file with epoll', function (done) {
     if (process.platform === 'linux') epollCopyFile(done)
     else this.skip()
@@ -62,18 +62,44 @@ function epollCopyFile (done) {
 }
 
 function bioCopyFile (done) {
-  done()
-}
-
-function bioWriteFile (done) {
   var b3 = new B3(
-    B3.randomDataGenerator, // l2rProducer
-    B3.libuvFileWriter, // l2rConsumer
+    B3.bioFileReader, // l2rProducer
+    B3.bioFileWriter, // l2rConsumer
     B3.defaults, // r2lProducer
     B3.defaults, // r2lConsumer
     256, // l2rBufsize
     2, // r2lBufsize
-    bigfile // l2rData
+    bigfile + '\n' + bigfileCopy // l2rData
+  )
+  var notDone = true
+
+  b3.r2lConsumer.on('token', t => {
+    console.log('+%d ms consumer sid %d, token sid %d, message "%s", delay %dµs',
+      B3.timeMs(), b3.r2lConsumer.sid, t.sid, t.message, t.delay)
+    b3.r2lConsumer.doneWith(t)
+    if (notDone) {
+      b3.close()
+      done()
+      notDone = false
+    }
+  })
+  b3.open()
+}
+
+function removeFiles () {
+  // console.log(`Removing files '${bigfile}' and '${bigfileCopy}'`)
+  execSync(`rm -f ${bigfile}; rm -f ${bigfileCopy}`)
+}
+
+function bioWriteFile (done) {
+  var b3 = new B3(
+    B3.sidSetter, // l2rProducer
+    B3.bioFileWriter, // l2rConsumer
+    B3.defaults, // r2lProducer
+    B3.defaults, // r2lConsumer
+    256, // l2rBufsize
+    2, // r2lBufsize
+    '\n' + bigfile // l2rData
   )
   var notDone = true
 
@@ -88,11 +114,6 @@ function bioWriteFile (done) {
     }
   })
   b3.open()
-}
-
-function removeFiles () {
-  // console.log(`Removing files '${bigfile}' and '${bigfileCopy}'`)
-  execSync(`rm -f ${bigfile}; rm -f ${bigfileCopy}`)
 }
 
 function runEchoExchange (done) {
