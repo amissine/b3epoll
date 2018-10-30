@@ -1,12 +1,15 @@
 #include "b2.h"
 
-static inline void nowUs (long long int * delay) {
+static inline long long int nowUs () {
+  long long int now;
   struct timeval timer_us;
   if (gettimeofday(&timer_us, NULL) == 0) {
-    *delay = ((long long int) timer_us.tv_sec) * 1000000ll +
+    now = ((long long int) timer_us.tv_sec) * 1000000ll +
       (long long int) timer_us.tv_usec;
   }
-  else *delay = -1ll;
+  else now = -1ll;
+
+  return now;
 }
 
 static void FreeModuleData (napi_env env, void* data, void* hint) {
@@ -478,7 +481,7 @@ static void consumer_cleanupOnClose_bioFileWriter (struct B2 * b2) {
   assert(0 == close(*fd));
   free(initToken);
 
-  nowUs(&now);
+  now = nowUs();
   sprintf(msg, "Wrote %d messages in %lldµs\n", FILESIZE, now - started);
   initTokenType(tt, msg);
   uv_mutex_lock(&b2r2l->tokenProducingMutex);
@@ -508,7 +511,7 @@ static inline void configure_b2 (struct B2 * b2) {
   initToken->tt_this.sid = FILESIZE;
 
   // Set initToken->theDelay to the current time in µs.
-  nowUs(&initToken->theDelay);
+  initToken->theDelay = nowUs();
 
   // Replace first '\n' with '\0' in b2->data;
   *strchr(b2->data, '\n') = '\0';
@@ -628,7 +631,7 @@ consumer_consumeToken_bioFileWriter (TokenType* tt, struct B2 * b2) {
   if (*fpp) goto check_fpp_eot;
 
   // Set theDelay.
-  nowUs(&tt->theDelay); tt->theDelay -= initToken->theDelay;
+  tt->theDelay = nowUs(); tt->theDelay -= initToken->theDelay;
 
   // Set theMessage.
   sprintf(tt->theMessage, "sid %d, ∆ %lldµs\n", tt->tt_this.sid, tt->theDelay);
@@ -677,25 +680,60 @@ static void consumer_initOnOpen_default (struct B2 * b2) {
 
 static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
 #ifdef __gnu_linux__
-  printf("producer_initOnOpen_epollFileReader __gnu_linux__ %d\n", __gnu_linux__);
+//  printf("producer_initOnOpen_epollFileReader sizeof(struct epoll_event) %zu\n",
+//      sizeof(struct epoll_event)); // 12
+  initOnOpen(b2);
+  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+  int * epollfd = (int *)(initToken->theMessage + sizeof(int *));
+
+  *epollfd = epoll_create1(0); 
+  assert(-1 != *epollfd);
+
+  struct epoll_event * ee = 
+    (struct epoll_event *)(initToken->theMessage + 2 * sizeof(int *));
+
+  ee->events = EPOLLIN;
+  ee->data.fd = open(b2->data, O_RDONLY);
+#ifdef DEBUG_PRINTF
 #endif
-}
-
-static void producer_cleanupOnClose_epollFileReader (struct B2 * b2) {
-}
-
-static void consumer_initOnOpen_epollFileWriter (struct B2 * b2) {
-}
-
-static void consumer_cleanupOnClose_epollFileWriter (struct B2 * b2) {
+  printf("producer_initOnOpen_epollFileReader '%s' %d\n",
+      b2->data, ee->data.fd);
+  if (-1 == epoll_ctl(*epollfd, EPOLL_CTL_ADD, ee->data.fd, ee)) {
+    perror("epoll_ctl: ee->data.fd");
+    exit(9);
+  }
+#ifdef DEBUG_PRINTF
+#endif
+  printf("producer_initOnOpen_epollFileReader '%s' %d\n",
+      b2->data, ee->data.fd);
+#endif
 }
 
 static void
 producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
+#ifdef __gnu_linux__
+#endif
+}
+
+static void producer_cleanupOnClose_epollFileReader (struct B2 * b2) {
+#ifdef __gnu_linux__
+#endif
+}
+
+static void consumer_initOnOpen_epollFileWriter (struct B2 * b2) {
+#ifdef __gnu_linux__
+#endif
+}
+
+static void consumer_cleanupOnClose_epollFileWriter (struct B2 * b2) {
+#ifdef __gnu_linux__
+#endif
 }
 
 static void
 consumer_consumeToken_epollFileWriter (TokenType* tt, struct B2 * b2) {
+#ifdef __gnu_linux__
+#endif
 }
 
 void (*producer_initOnOpen[]) (struct B2 *) = {
