@@ -9,6 +9,9 @@
 #include <uv.h>
 #include <node_api.h>
 #include <sys/time.h>
+#ifdef __gnu_linux__
+#include <sys/epoll.h>
+#endif
 
 struct fifo {
   struct fifo* in;

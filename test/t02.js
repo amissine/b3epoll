@@ -10,11 +10,11 @@ var b3 = new B3()
 var x
 var count = 1
 var bigfile = '/tmp/bigfile.t02'
-var bigfileCopy = '/tmp/bigfileCopy.t02'
+var bigfileCopyBio = '/tmp/bigfileCopyBio.t02'
+var bigfileCopyEpoll = '/tmp/bigfileCopyEpoll.t02'
 
 describe('A B3 module:', () => {
   before(removeFiles)
-  // after(removeFiles)
 
   it('is a bidirectional B2 (bounded buffer)', function (done) {
     if (count++) {
@@ -48,17 +48,38 @@ describe('A B3 module:', () => {
   it('handles the backpressure nicely', done => handleBackpressure(done)
   ).timeout(200)
   it('writes a file on disk with blocking IO', done => bioWriteFile(done)
-  ).timeout(20000)
+  ).timeout(2000)
   it('copies the file with blocking IO', done => bioCopyFile(done)
-  ).timeout(20000)
+  ).timeout(2000)
   it('copies the file with epoll', function (done) {
     if (process.platform === 'linux') epollCopyFile(done)
     else this.skip()
-  }).timeout(200)
+  }).timeout(2000)
 })
 
 function epollCopyFile (done) {
-  done()
+  var b3 = new B3(
+    B3.epollFileReader, // l2rProducer
+    B3.epollFileWriter, // l2rConsumer
+    B3.defaults, // r2lProducer
+    B3.defaults, // r2lConsumer
+    256, // l2rBufsize
+    2, // r2lBufsize
+    bigfile + '\n' + bigfileCopyEpoll // l2rData
+  )
+  var notDone = true
+
+  b3.r2lConsumer.on('token', t => {
+    // console.log('+%d ms consumer sid %d, token sid %d, message "%s", delay %dµs',
+    //  B3.timeMs(), b3.r2lConsumer.sid, t.sid, t.message, t.delay)
+    b3.r2lConsumer.doneWith(t)
+    if (notDone) {
+      b3.close()
+      done()
+      notDone = false
+    }
+  })
+  b3.open()
 }
 
 function bioCopyFile (done) {
@@ -69,7 +90,7 @@ function bioCopyFile (done) {
     B3.defaults, // r2lConsumer
     256, // l2rBufsize
     2, // r2lBufsize
-    bigfile + '\n' + bigfileCopy // l2rData
+    bigfile + '\n' + bigfileCopyBio // l2rData
   )
   var notDone = true
 
@@ -87,8 +108,7 @@ function bioCopyFile (done) {
 }
 
 function removeFiles () {
-  // console.log(`Removing files '${bigfile}' and '${bigfileCopy}'`)
-  execSync(`rm -f ${bigfile}; rm -f ${bigfileCopy}`)
+  execSync(`rm -f ${bigfile} ${bigfileCopyBio} ${bigfileCopyEpoll}`)
 }
 
 function bioWriteFile (done) {

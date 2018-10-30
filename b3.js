@@ -72,7 +72,9 @@ class B3 {
 B3.defaults = 0 // producer and consumer Ids
 B3.sidSetter = 1 // producerId
 B3.bioFileReader = 2 // producerId
+B3.epollFileReader = 3 // producerId
 B3.bioFileWriter = 1 // consumerId
+B3.epollFileWriter = 2 // consumerId
 
 module.exports = B3
 

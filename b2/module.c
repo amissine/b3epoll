@@ -675,32 +675,61 @@ static void consumer_initOnOpen_bioFileWriter (struct B2 * b2) {
 static void consumer_initOnOpen_default (struct B2 * b2) {
 }
 
+static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
+#ifdef __gnu_linux__
+  printf("producer_initOnOpen_epollFileReader __gnu_linux__ %d\n", __gnu_linux__);
+#endif
+}
+
+static void producer_cleanupOnClose_epollFileReader (struct B2 * b2) {
+}
+
+static void consumer_initOnOpen_epollFileWriter (struct B2 * b2) {
+}
+
+static void consumer_cleanupOnClose_epollFileWriter (struct B2 * b2) {
+}
+
+static void
+producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
+}
+
+static void
+consumer_consumeToken_epollFileWriter (TokenType* tt, struct B2 * b2) {
+}
+
 void (*producer_initOnOpen[]) (struct B2 *) = {
   producer_initOnOpen_default,
   producer_initOnOpen_sidSetter,
-  producer_initOnOpen_bioFileReader
+  producer_initOnOpen_bioFileReader,
+  producer_initOnOpen_epollFileReader
 };
 void (*producer_cleanupOnClose[]) (struct B2 *) = {
   producer_cleanupOnClose_default,
   producer_cleanupOnClose_sidSetter,
-  producer_cleanupOnClose_bioFileReader
+  producer_cleanupOnClose_bioFileReader,
+  producer_cleanupOnClose_epollFileReader
 };
 void (*producer_produceToken[]) (TokenType* tt, struct B2 * b2) = {
   producer_produceToken_default,
   producer_produceToken_sidSetter,
-  producer_produceToken_bioFileReader
+  producer_produceToken_bioFileReader,
+  producer_produceToken_epollFileReader
 };
 void (*consumer_initOnOpen[]) (struct B2 *) = {
   consumer_initOnOpen_default,
-  consumer_initOnOpen_bioFileWriter
+  consumer_initOnOpen_bioFileWriter,
+  consumer_initOnOpen_epollFileWriter
 };
 void (*consumer_cleanupOnClose[]) (struct B2 *) = {
   consumer_cleanupOnClose_default,
-  consumer_cleanupOnClose_bioFileWriter
+  consumer_cleanupOnClose_bioFileWriter,
+  consumer_cleanupOnClose_epollFileWriter
 };
 void (*consumer_consumeToken[]) (TokenType* tt, struct B2 * b2) = {
   consumer_consumeToken_default,
-  consumer_consumeToken_bioFileWriter
+  consumer_consumeToken_bioFileWriter,
+  consumer_consumeToken_epollFileWriter
 };
 
 static inline struct B2 *
