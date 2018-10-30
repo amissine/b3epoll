@@ -523,18 +523,69 @@ static inline void configure_b2 (struct B2 * b2) {
 
 static inline void initOnOpen (struct B2 * b2) {
   uv_mutex_lock(&b2->tokenProducingMutex);
-  if (fifoEmpty(&b2->producer.tokens2produce)) configure_b2(b2);
+  configure_b2(b2);
+  uv_cond_signal(&b2->tokenProducing);
   uv_mutex_unlock(&b2->tokenProducingMutex);
 }
 
 static void producer_initOnOpen_bioFileReader (struct B2 * b2) {
-}
+  initOnOpen(b2);
+  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int *));
+#ifdef DEBUG_PRINTF
+  unsigned int * sid = (unsigned int *)
+    (initToken->theMessage + sizeof(int *) + sizeof(FILE *));
+#endif
 
-static void producer_cleanupOnClose_bioFileReader (struct B2 * b2) {
+  *fpp = fopen(b2->data, "r");
+#ifdef DEBUG_PRINTF
+  printf("producer_initOnOpen_bioFileReader '%s' sid %u\n", b2->data, *sid);
+#endif
 }
 
 static void
 producer_produceToken_bioFileReader (TokenType* tt, struct B2 * b2) {
+  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int *));
+  unsigned int * sid = (unsigned int *)
+    (initToken->theMessage + sizeof(int *) + sizeof(FILE *));
+
+  if (initToken->tt_this.sid == 0) { // wait until b2 is closed
+    uv_mutex_lock(&b2->tokenProducingMutex);
+    while (b2->isOpen) uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
+    uv_mutex_unlock(&b2->tokenProducingMutex);
+#ifdef DEBUG_PRINTF
+    printf("producer_produceToken_bioFileReader is being closed\n");
+#endif
+    return;
+  }
+
+  // Set sid.
+  tt->tt_this.sid = (*sid)++;
+
+  // Set tt->theMessage and return.
+  *((char *)&tt->theDelay) = '\0';
+  if (fgets(tt->theMessage, sizeof(tt->theMessage), *fpp)) return;
+
+  if (ferror(*fpp)) {
+    perror("producer_produceToken_bioFileReader");
+    fclose(*fpp);
+  }
+  else if (feof(*fpp)) {
+#ifdef DEBUG_PRINTF
+    printf("producer_produceToken_bioFileReader closing on EOF\n");
+#endif
+    *((char *)&tt->theDelay) = '\004';
+    initToken->tt_this.sid = 0;
+    fclose(*fpp);
+  }
+  else {
+    printf("\n\nUNEXPECTED\n\n\n");
+    exit(1);
+  }
+}
+
+static void producer_cleanupOnClose_bioFileReader (struct B2 * b2) {
 }
 
 static void producer_initOnOpen_sidSetter (struct B2 * b2) {
@@ -562,7 +613,7 @@ producer_produceToken_sidSetter (TokenType* tt, struct B2 * b2) {
   // indicator in tt->theDelay.
   *((char *)&tt->theDelay) = initToken->tt_this.sid == 0 ? '\004' : '\0';
 
-#ifdef DEBUG_PRINTF
+#ifdef DEBUG_PRINTFF
   printf("producer_produceToken_sidSetter sid %d\nn", tt->tt_this.sid);
 #endif
 }
@@ -572,6 +623,9 @@ consumer_consumeToken_bioFileWriter (TokenType* tt, struct B2 * b2) {
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
   int * fd = (int *) initToken->theMessage;
   char eot = *((char *)&tt->theDelay); // the end-of-transmission indicator
+  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int *));
+
+  if (*fpp) goto check_fpp_eot;
 
   // Set theDelay.
   nowUs(&tt->theDelay); tt->theDelay -= initToken->theDelay;
@@ -579,15 +633,18 @@ consumer_consumeToken_bioFileWriter (TokenType* tt, struct B2 * b2) {
   // Set theMessage.
   sprintf(tt->theMessage, "sid %d, ∆ %lldµs\n", tt->tt_this.sid, tt->theDelay);
 
+check_fpp_eot:
+  if (*fpp && eot) goto check_eot;
+  
   // Write theMessage.
   ssize_t written = write(*fd, tt->theMessage, strlen(tt->theMessage));
   assert(-1 < written);
 
-#ifdef DEBUG_PRINTF
-  printf("consumer_consumeToken_bioFileWriter '%s'\n", tt->theMessage);
-#endif
-
+check_eot:
   if (eot) { // close the b2 internally
+#ifdef DEBUG_PRINTF
+    printf("consumer_consumeToken_bioFileWriter eot %d\n", eot);
+#endif
     uv_mutex_lock(&b2->tokenProducingMutex);
     b2->isOpen = 0;
     uv_cond_signal(&b2->tokenProducing);
@@ -596,16 +653,23 @@ consumer_consumeToken_bioFileWriter (TokenType* tt, struct B2 * b2) {
 }
 
 static void consumer_initOnOpen_bioFileWriter (struct B2 * b2) {
-  initOnOpen(b2);
+  uv_mutex_lock(&b2->tokenProducingMutex);
+  while (fifoEmpty(&b2->producer.tokens2produce))
+    uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
+  uv_mutex_unlock(&b2->tokenProducingMutex);
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
   int * fd = (int *) initToken->theMessage;
+#ifdef DEBUG_PRINTF
+  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int *));
+#endif
   char * file = b2->data;
 
   file += strlen(file) + 1;
   *fd = open(file, O_CREAT|O_WRONLY, 0600);
 #ifdef DEBUG_PRINTF
+  printf("consumer_initOnOpen_bioFileWriter '%s' %d%s\n", 
+      file, *fd, *fpp ? ", copying" : "");
 #endif
-  printf("consumer_initOnOpen_bioFileWriter '%s' %d\n", file, *fd);
 }
 
 static void consumer_initOnOpen_default (struct B2 * b2) {
