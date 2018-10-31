@@ -54,7 +54,7 @@ describe('A B3 module:', () => {
   it('copies the file with epoll', function (done) {
     if (process.platform === 'linux') epollCopyFile(done)
     else this.skip()
-  }).timeout(2000)
+  }).timeout(3000)
 })
 
 function epollCopyFile (done) {

@@ -1,4 +1,5 @@
 #include "b2.h"
+#include "udp.h"
 
 static inline long long int nowUs () {
   long long int now;
@@ -678,34 +679,90 @@ static void consumer_initOnOpen_bioFileWriter (struct B2 * b2) {
 static void consumer_initOnOpen_default (struct B2 * b2) {
 }
 
+const char udpPort[] = "3000";
+
+static pid_t forkUDPserver () {
+  pid_t cpid = fork();
+
+  switch (cpid) {
+    case -1: perror("fork"); exit(1);
+    case  0: break;
+    default: 
+             sleep(1);
+             return cpid;
+  }
+
+  int socketFd = udpFdBnd(udpPort, 0);
+  char buf[128];
+  struct sockaddr_storage peer_addr;
+  socklen_t peer_addr_len;
+#ifdef DEBUG_PRINTF
+#endif
+  printf("forkUDPserver is listening for command on udpPort %s\n", udpPort);
+  ssize_t nread = recvfrom(socketFd, buf, 128, 0,
+      (struct sockaddr *) &peer_addr, &peer_addr_len);
+  assert(0 < nread); // no EOF is expected here
+  buf[nread] = '\0';
+
+  char host[NI_MAXHOST], service[NI_MAXSERV];
+  int s = getnameinfo((struct sockaddr *) &peer_addr, peer_addr_len,
+      host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICSERV);
+  if (s == 0) {
+#ifdef DEBUG_PRINTF
+#endif
+    printf("forkUDPserver received %ld bytes from %s:%s '%s'\n", 
+        nread, host, service, buf);
+  }
+  else fprintf(stderr, "getnameinfo: %s\n", gai_strerror(s));
+
+  assert(0 == close(socketFd));
+#ifdef DEBUG_PRINTF
+#endif
+  printf("forkUDPserver closed the socket and is exiting\n");
+  exit(0);
+}
+
+// Reading a regular file from the hard drive is not permitted with epoll.
+// To use epoll, we fork a UDP server process that will have file read after
+// this producer asks it to do so. Then this producer will get the file data
+// via UDP with epoll.
 static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
 #ifdef __gnu_linux__
-//  printf("producer_initOnOpen_epollFileReader sizeof(struct epoll_event) %zu\n",
-//      sizeof(struct epoll_event)); // 12
+#ifdef DEBUG_PRINTF
+  printf("producer_initOnOpen_epollFileReader using %zu bytes of theMessage\n",
+      sizeof(int) + // fd of the bigfileCopy
+      sizeof(int) + // epollfd
+      sizeof(pid_t) + // pid of the UDP server child process
+      sizeof(struct epoll_event)); // 24
+#endif
   initOnOpen(b2);
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
-  int * epollfd = (int *)(initToken->theMessage + sizeof(int *));
 
+  int * epollfd = (int *)(initToken->theMessage + sizeof(int));
   *epollfd = epoll_create1(0); 
   assert(-1 != *epollfd);
 
-  struct epoll_event * ee = 
-    (struct epoll_event *)(initToken->theMessage + 2 * sizeof(int *));
+  pid_t * pidUDPserver = (pid_t *)(epollfd + sizeof(int));
+  *pidUDPserver = forkUDPserver();
 
+  struct epoll_event * ee = (struct epoll_event *)(pidUDPserver + sizeof(pid_t));
   ee->events = EPOLLIN;
-  ee->data.fd = open(b2->data, O_RDONLY);
+  ee->data.fd = udpFd("127.0.0.1", udpPort, 0);
 #ifdef DEBUG_PRINTF
 #endif
-  printf("producer_initOnOpen_epollFileReader '%s' %d\n",
-      b2->data, ee->data.fd);
+  printf("producer_initOnOpen_epollFileReader localhost:%s %d\n",
+      udpPort, ee->data.fd);
   if (-1 == epoll_ctl(*epollfd, EPOLL_CTL_ADD, ee->data.fd, ee)) {
     perror("epoll_ctl: ee->data.fd");
     exit(9);
   }
+  
+  char command[128] = "read file ";
+  strcpy(&command[strlen(command)], b2->data);
+  assert(strlen(command) == (size_t)write(ee->data.fd, command, strlen(command)));
 #ifdef DEBUG_PRINTF
 #endif
-  printf("producer_initOnOpen_epollFileReader '%s' %d\n",
-      b2->data, ee->data.fd);
+  printf("producer_initOnOpen_epollFileReader command '%s' sent\n", command);
 #endif
 }
 
