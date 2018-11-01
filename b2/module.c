@@ -1,5 +1,6 @@
 #include "b2.h"
 #include "udp.h"
+#include <sys/eventfd.h>
 
 static inline long long int nowUs () {
   long long int now;
@@ -680,40 +681,45 @@ static void consumer_initOnOpen_default (struct B2 * b2) {
 }
 
 const char udpPort[] = "3000";
+int efd;
 
 static pid_t forkUDPserver () {
+  uint64_t u = 1;
   pid_t cpid = fork();
 
   switch (cpid) {
     case -1: perror("fork"); exit(1);
     case  0: break;
     default: 
-             sleep(1);
+             assert(sizeof(uint64_t) == read(efd, &u, sizeof(uint64_t)));
              return cpid;
   }
-
   int socketFd = udpFdBnd(udpPort, 0);
   char buf[128];
+  ssize_t nread;
   struct sockaddr_storage peer_addr;
-  socklen_t peer_addr_len;
+  socklen_t peer_addr_len = sizeof(struct sockaddr_storage);
 #ifdef DEBUG_PRINTF
 #endif
   printf("forkUDPserver is listening for command on udpPort %s\n", udpPort);
-  ssize_t nread = recvfrom(socketFd, buf, 128, 0,
+  assert(sizeof(uint64_t) == write(efd, &u, sizeof(uint64_t))); // parent
+                                                                // notified
+  nread = recvfrom(socketFd, buf, 128, 0,
       (struct sockaddr *) &peer_addr, &peer_addr_len);
-  assert(0 < nread); // no EOF is expected here
+  assert(0 < nread);
   buf[nread] = '\0';
 
   char host[NI_MAXHOST], service[NI_MAXSERV];
   int s = getnameinfo((struct sockaddr *) &peer_addr, peer_addr_len,
-      host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICSERV);
+      host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICHOST | NI_NUMERICSERV);
   if (s == 0) {
 #ifdef DEBUG_PRINTF
 #endif
     printf("forkUDPserver received %ld bytes from %s:%s '%s'\n", 
         nread, host, service, buf);
+    // udpFile(buf, socketFd);
   }
-  else fprintf(stderr, "getnameinfo: %s\n", gai_strerror(s));
+  else fprintf(stderr, "getnameinfo: %s; buf '%s'\n", gai_strerror(s), buf);
 
   assert(0 == close(socketFd));
 #ifdef DEBUG_PRINTF
@@ -732,8 +738,8 @@ static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
   printf("producer_initOnOpen_epollFileReader using %zu bytes of theMessage\n",
       sizeof(int) + // fd of the bigfileCopy
       sizeof(int) + // epollfd
-      sizeof(pid_t) + // pid of the UDP server child process
-      sizeof(struct epoll_event)); // 24
+      sizeof(pid_t) // pid of the UDP server child process
+      ); // 24
 #endif
   initOnOpen(b2);
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
@@ -742,33 +748,40 @@ static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
   *epollfd = epoll_create1(0); 
   assert(-1 != *epollfd);
 
+  assert(-1 < (efd = eventfd(0, 0)));
   pid_t * pidUDPserver = (pid_t *)(epollfd + sizeof(int));
   *pidUDPserver = forkUDPserver();
 
-  struct epoll_event * ee = (struct epoll_event *)(pidUDPserver + sizeof(pid_t));
-  ee->events = EPOLLIN;
-  ee->data.fd = udpFd("127.0.0.1", udpPort, 0);
+  struct epoll_event ee;
+  ee.events = EPOLLIN;
+  ee.data.fd = udpFd("127.0.0.1", udpPort, 0);
 #ifdef DEBUG_PRINTF
 #endif
   printf("producer_initOnOpen_epollFileReader localhost:%s %d\n",
-      udpPort, ee->data.fd);
-  if (-1 == epoll_ctl(*epollfd, EPOLL_CTL_ADD, ee->data.fd, ee)) {
-    perror("epoll_ctl: ee->data.fd");
+      udpPort, ee.data.fd);
+  if (-1 == epoll_ctl(*epollfd, EPOLL_CTL_ADD, ee.data.fd, &ee)) {
+    perror("epoll_ctl: ee.data.fd");
     exit(9);
   }
-  
-  char command[128] = "read file ";
-  strcpy(&command[strlen(command)], b2->data);
-  assert(strlen(command) == (size_t)write(ee->data.fd, command, strlen(command)));
+  assert(strlen(b2->data) == // send filename to the UDP server
+      (size_t)write(ee.data.fd, b2->data, strlen(b2->data)));
 #ifdef DEBUG_PRINTF
 #endif
-  printf("producer_initOnOpen_epollFileReader command '%s' sent\n", command);
+  printf("producer_initOnOpen_epollFileReader command '%s' sent\n", b2->data);
 #endif
 }
 
 static void
 producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
 #ifdef __gnu_linux__
+  TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
+  int * epollfd = (int *)(initToken->theMessage + sizeof(int));
+  struct epoll_event events[10];
+  int n, nfds = epoll_wait(*epollfd, events, 10, -1);
+  assert(-1 < nfds);
+
+  for (n = 0; n < nfds; n++) { // read from events[n].data.fd (UDP client FD)
+  }
 #endif
 }
 
