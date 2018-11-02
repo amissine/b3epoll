@@ -703,8 +703,8 @@ static void udpFile (char* f, int socketFd, struct sockaddr * pa, socklen_t pal)
     fprintf(stderr, "\n\nUNEXPECTED\n\n\n"); exit(1);
   }
 #ifdef DEBUG_PRINTF
-#endif
   printf("\nudpFile count %zu\n", count);
+#endif
 }
 
 static pid_t forkUDPserver () {
@@ -723,8 +723,8 @@ static pid_t forkUDPserver () {
   struct sockaddr_storage peer_addr;
   socklen_t peer_addr_len = sizeof(struct sockaddr_storage);
 #ifdef DEBUG_PRINTF
-#endif
   printf("forkUDPserver is listening for command on udpPort %s\n", udpPort);
+#endif
   assert(sizeof(uint64_t) == write(efd, &u, sizeof(uint64_t))); // parent
                                                                 // notified
   nread = recvfrom(socketFd, buf, 128, 0,
@@ -737,17 +737,17 @@ static pid_t forkUDPserver () {
       host, NI_MAXHOST, service, NI_MAXSERV, NI_NUMERICHOST | NI_NUMERICSERV);
   if (s == 0) {
 #ifdef DEBUG_PRINTF
-#endif
     printf("forkUDPserver received %ld bytes from %s:%s '%s'\n", 
         nread, host, service, buf);
+#endif
     udpFile(buf, socketFd, (struct sockaddr *) &peer_addr, peer_addr_len);
   }
   else fprintf(stderr, "getnameinfo: %s; buf '%s'\n", gai_strerror(s), buf);
 
   assert(0 == close(socketFd));
 #ifdef DEBUG_PRINTF
-#endif
   printf("forkUDPserver closed the socket and is exiting\n");
+#endif
   exit(0);
 }
 
@@ -780,9 +780,9 @@ static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
   ee.events = EPOLLIN;
   ee.data.fd = udpFd("127.0.0.1", udpPort, 0);
 #ifdef DEBUG_PRINTF
-#endif
   printf("producer_initOnOpen_epollFileReader localhost:%s %d\n",
       udpPort, ee.data.fd);
+#endif
   if (-1 == epoll_ctl(*epollfd, EPOLL_CTL_ADD, ee.data.fd, &ee)) {
     perror("epoll_ctl: ee.data.fd");
     exit(9);
@@ -790,22 +790,29 @@ static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
   assert(strlen(b2->data) == // send filename to the UDP server
       (size_t)write(ee.data.fd, b2->data, strlen(b2->data)));
 #ifdef DEBUG_PRINTF
-#endif
   printf("producer_initOnOpen_epollFileReader command '%s' sent\n", b2->data);
 #endif
-}
-
-#ifdef DEBUG_PRINTFE
 #endif
-size_t epollCount = 0;
+}
 
 static void
 producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
 #ifdef __gnu_linux__
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
   int * epollfd = (int *)(initToken->theMessage + sizeof(int));
+  unsigned int * sid = (unsigned int *)(epollfd + sizeof(int));
   uint64_t u = 1;
   struct epoll_event events[1];
+
+  if (*sid == FILESIZE) { // wait until b2 is closed
+    uv_mutex_lock(&b2->tokenProducingMutex);
+    while (b2->isOpen) uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
+    uv_mutex_unlock(&b2->tokenProducingMutex);
+#ifdef DEBUG_PRINTF
+    printf("producer_produceToken_epollFileReader is being closed\n");
+#endif
+    return;
+  }
   
   assert(sizeof(uint64_t) == write(efd, &u, sizeof(uint64_t))); // child
                                                                 // notified
@@ -814,9 +821,11 @@ producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
 
   ssize_t nread = read(events->data.fd, tt->theMessage, sizeof(tt->theMessage));
   tt->theMessage[nread] = '\0';
-#ifdef DEBUG_PRINTFE
-#endif
-  printf(" %zu", ++epollCount);
+  if ((tt->tt_this.sid = (*sid)++) == FILESIZE - 1) { // Set eot
+    *((char *)&tt->theDelay) = '\004';
+    close(events->data.fd);
+  }
+  else *((char *)&tt->theDelay) = '\0';
 #endif
 }
 

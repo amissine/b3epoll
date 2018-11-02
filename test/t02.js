@@ -54,13 +54,13 @@ describe('A B3 module:', () => {
   it('copies the file with epoll', function (done) {
     if (process.platform === 'linux') epollCopyFile(done)
     else this.skip()
-  }).timeout(2000)
+  }).timeout(4000)
 })
 
 function epollCopyFile (done) {
   var b3 = new B3(
     B3.epollFileReader, // l2rProducer
-    B3.epollFileWriter, // l2rConsumer
+    B3.bioFileWriter, // l2rConsumer
     B3.defaults, // r2lProducer
     B3.defaults, // r2lConsumer
     256, // l2rBufsize
