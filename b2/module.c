@@ -536,10 +536,10 @@ static inline void initOnOpen (struct B2 * b2) {
 static void producer_initOnOpen_bioFileReader (struct B2 * b2) {
   initOnOpen(b2);
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
-  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int *));
+  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int));
 #ifdef DEBUG_PRINTF
   unsigned int * sid = (unsigned int *)
-    (initToken->theMessage + sizeof(int *) + sizeof(FILE *));
+    (initToken->theMessage + sizeof(int) + sizeof(FILE *));
 #endif
 
   *fpp = fopen(b2->data, "r");
@@ -551,9 +551,9 @@ static void producer_initOnOpen_bioFileReader (struct B2 * b2) {
 static void
 producer_produceToken_bioFileReader (TokenType* tt, struct B2 * b2) {
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
-  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int *));
+  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int));
   unsigned int * sid = (unsigned int *)
-    (initToken->theMessage + sizeof(int *) + sizeof(FILE *));
+    (initToken->theMessage + sizeof(int) + sizeof(FILE *));
 
   if (initToken->tt_this.sid == 0) { // wait until b2 is closed
     uv_mutex_lock(&b2->tokenProducingMutex);
@@ -628,7 +628,7 @@ consumer_consumeToken_bioFileWriter (TokenType* tt, struct B2 * b2) {
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
   int * fd = (int *) initToken->theMessage;
   char eot = *((char *)&tt->theDelay); // the end-of-transmission indicator
-  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int *));
+  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int));
 
   if (*fpp) goto check_fpp_eot;
 
@@ -643,7 +643,7 @@ check_fpp_eot:
   
   // Write theMessage.
   ssize_t written = write(*fd, tt->theMessage, strlen(tt->theMessage));
-  assert(-1 < written);
+  assert((ssize_t)strlen(tt->theMessage) ==  written);
 
 check_eot:
   if (eot) { // close the b2 internally
@@ -665,7 +665,7 @@ static void consumer_initOnOpen_bioFileWriter (struct B2 * b2) {
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
   int * fd = (int *) initToken->theMessage;
 #ifdef DEBUG_PRINTF
-  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int *));
+  FILE ** fpp = (FILE **)(initToken->theMessage + sizeof(int));
 #endif
   char * file = b2->data;
 
@@ -682,6 +682,30 @@ static void consumer_initOnOpen_default (struct B2 * b2) {
 
 const char udpPort[] = "3000";
 int efd;
+char buf[128];
+
+static void udpFile (char* f, int socketFd, struct sockaddr * pa, socklen_t pal) {
+  FILE * fp = fopen(f, "r");
+  size_t count = 0;
+  uint64_t u;
+
+  while (fgets(buf, sizeof(buf), fp)) {
+    assert(sizeof(uint64_t) == read(efd, &u, sizeof(uint64_t)));
+    assert((ssize_t)strlen(buf) == sendto(socketFd, buf, strlen(buf), 0, pa, pal)); 
+    count++;
+  }
+
+  if (ferror(fp)) {
+    perror("udpFile fgets"); fclose(fp); exit(1);
+  }
+  else if (feof(fp)) fclose(fp);
+  else {
+    fprintf(stderr, "\n\nUNEXPECTED\n\n\n"); exit(1);
+  }
+#ifdef DEBUG_PRINTF
+#endif
+  printf("\nudpFile count %zu\n", count);
+}
 
 static pid_t forkUDPserver () {
   uint64_t u = 1;
@@ -695,7 +719,6 @@ static pid_t forkUDPserver () {
              return cpid;
   }
   int socketFd = udpFdBnd(udpPort, 0);
-  char buf[128];
   ssize_t nread;
   struct sockaddr_storage peer_addr;
   socklen_t peer_addr_len = sizeof(struct sockaddr_storage);
@@ -717,7 +740,7 @@ static pid_t forkUDPserver () {
 #endif
     printf("forkUDPserver received %ld bytes from %s:%s '%s'\n", 
         nread, host, service, buf);
-    // udpFile(buf, socketFd);
+    udpFile(buf, socketFd, (struct sockaddr *) &peer_addr, peer_addr_len);
   }
   else fprintf(stderr, "getnameinfo: %s; buf '%s'\n", gai_strerror(s), buf);
 
@@ -738,7 +761,7 @@ static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
   printf("producer_initOnOpen_epollFileReader using %zu bytes of theMessage\n",
       sizeof(int) + // fd of the bigfileCopy
       sizeof(int) + // epollfd
-      sizeof(pid_t) // pid of the UDP server child process
+      sizeof(int)   // sid
       ); // 24
 #endif
   initOnOpen(b2);
@@ -749,8 +772,9 @@ static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
   assert(-1 != *epollfd);
 
   assert(-1 < (efd = eventfd(0, 0)));
-  pid_t * pidUDPserver = (pid_t *)(epollfd + sizeof(int));
-  *pidUDPserver = forkUDPserver();
+  unsigned int * sid = (unsigned int *)(epollfd + sizeof(int));
+  *sid = 0;
+  forkUDPserver();
 
   struct epoll_event ee;
   ee.events = EPOLLIN;
@@ -771,17 +795,28 @@ static void producer_initOnOpen_epollFileReader (struct B2 * b2) {
 #endif
 }
 
+#ifdef DEBUG_PRINTFE
+#endif
+size_t epollCount = 0;
+
 static void
 producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
 #ifdef __gnu_linux__
   TokenType* initToken = (TokenType*)b2->producer.tokens2produce.in;
   int * epollfd = (int *)(initToken->theMessage + sizeof(int));
-  struct epoll_event events[10];
-  int n, nfds = epoll_wait(*epollfd, events, 10, -1);
-  assert(-1 < nfds);
+  uint64_t u = 1;
+  struct epoll_event events[1];
+  
+  assert(sizeof(uint64_t) == write(efd, &u, sizeof(uint64_t))); // child
+                                                                // notified
+  int nfds = epoll_wait(*epollfd, events, 1, -1);
+  assert(1 == nfds);
 
-  for (n = 0; n < nfds; n++) { // read from events[n].data.fd (UDP client FD)
-  }
+  ssize_t nread = read(events->data.fd, tt->theMessage, sizeof(tt->theMessage));
+  tt->theMessage[nread] = '\0';
+#ifdef DEBUG_PRINTFE
+#endif
+  printf(" %zu", ++epollCount);
 #endif
 }
 
