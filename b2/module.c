@@ -804,7 +804,7 @@ producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
   uint64_t u = 1;
   struct epoll_event events[1];
 
-  if (*sid == FILESIZE) { // wait until b2 is closed
+  if (*sid == FILESIZE + 1) { // wait until b2 is closed, then return
     uv_mutex_lock(&b2->tokenProducingMutex);
     while (b2->isOpen) uv_cond_wait(&b2->tokenProducing, &b2->tokenProducingMutex);
     uv_mutex_unlock(&b2->tokenProducingMutex);
@@ -813,7 +813,10 @@ producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
 #endif
     return;
   }
-  
+  if ((tt->tt_this.sid = (*sid)++) == FILESIZE) { // set eot and return
+    *((char *)&tt->theDelay) = '\004';
+    return;
+  }
   assert(sizeof(uint64_t) == write(efd, &u, sizeof(uint64_t))); // child
                                                                 // notified
   int nfds = epoll_wait(*epollfd, events, 1, -1);
@@ -821,11 +824,8 @@ producer_produceToken_epollFileReader (TokenType* tt, struct B2 * b2) {
 
   ssize_t nread = read(events->data.fd, tt->theMessage, sizeof(tt->theMessage));
   tt->theMessage[nread] = '\0';
-  if ((tt->tt_this.sid = (*sid)++) == FILESIZE - 1) { // Set eot
-    *((char *)&tt->theDelay) = '\004';
-    close(events->data.fd);
-  }
-  else *((char *)&tt->theDelay) = '\0';
+  *((char *)&tt->theDelay) = '\0';
+  if (*sid == FILESIZE) close(events->data.fd);
 #endif
 }
 
