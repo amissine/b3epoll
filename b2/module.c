@@ -1,6 +1,8 @@
 #include "b2.h"
 #include "udp.h"
+#ifdef __gnu_linux__
 #include <sys/eventfd.h>
+#endif
 
 static inline long long int nowUs () {
   long long int now;
@@ -707,7 +709,7 @@ static void udpFile (char* f, int socketFd, struct sockaddr * pa, socklen_t pal)
 #endif
 }
 
-static pid_t forkUDPserver () {
+/* static */ pid_t forkUDPserver () {
   uint64_t u = 1;
   pid_t cpid = fork();
 
