@@ -22,7 +22,10 @@ git clone https://github.com/amissine/b3epoll.git
 cd b3epoll
 npm install
 ```
-Then run the tests with `npm test`.
+Then run the tests with `npm test`. Sample outputs:
+
+- [Linux](https://docs.google.com/document/d/1geCoT0rSZLRaRomakzuT3a_Ap5CQSNsm1dvFc3788i4/)
+- [MacOS](https://docs.google.com/document/d/1qPa1v0a50fqGsK-rsPlXdakWtlvL13NsnC7uc1yEyX4/)
 
 ## Demos
 
