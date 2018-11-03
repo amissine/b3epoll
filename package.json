@@ -7,7 +7,8 @@
     "test": "npm run lint && npm run unit",
     "unit": "mocha",
     "lint": "standard",
-    "lintFix": "standard --fix"
+    "lintFix": "standard --fix",
+    "demos": "echo 'No demos yet.'"
   },
   "repository": {
     "type": "git",
