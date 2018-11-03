@@ -1,5 +1,5 @@
 # b3epoll
-Bidirectional Bounded Buffer with N-API and Linux Epoll, pure C implementation. Uses `NAPI_EXPERIMENTAL` features, requires `"node": ">=10.10"`.
+Bidirectional Bounded Buffer with N-API and Linux Epoll, pure C implementation. Uses `NAPI_EXPERIMENTAL` features, requires `"node": ">=10.10"`. Implements an event-driven [N-API](https://nodejs.org/api/n-api.html) solution to the [Single Producer-Consumer Problem](http://www.dcs.ed.ac.uk/home/adamd/essays/ex1.html). Tries to [minimize the use of mutexes](https://en.wikipedia.org/wiki/Producer–consumer_problem#Without_semaphores_or_monitors) between the producer-consumer threads. Has been tested on Ubuntu 16.04 LTS. Also runs on macOS with epoll tests skipped.
 
 ## Contents
 
@@ -10,7 +10,9 @@ Bidirectional Bounded Buffer with N-API and Linux Epoll, pure C implementation. 
 
 ## Introduction
 
-This [N-API](https://nodejs.org/api/n-api.html) solution to the [Single Producer-Consumer Problem](http://www.dcs.ed.ac.uk/home/adamd/essays/ex1.html) is an [event-driven](https://en.wikipedia.org/wiki/Epoll) one that [tries not to use semaphores or monitors](https://en.wikipedia.org/wiki/Producer–consumer_problem#Without_semaphores_or_monitors). It has been tested on Ubuntu 16.04 LTS. It also runs on macOS with epoll tests skipped.
+The JavaScript's popularity and versatility are huge and growing. The NodeJS-NPM ecosystem is nice and powerful. And the N-API part of NodeJS allows all kinds of communication between the C/C++ addons and the JavaScript side of your app. If you write the crucial parts of your app in C, you can speed it up significantly. For example, you can add producer-consumer threads to it and make better use of your machine's CPUs.
+
+If your server runs Linux, you can improve the scalability of your app and further speed it up by using Linux [epoll](http://man7.org/linux/man-pages/man7/epoll.7.html) and [eventfd](http://man7.org/linux/man-pages/man2/eventfd.2.html) features. It is nice to have event-driven support on a kernel level, makes it possible to build competitive realtime apps for financial, cryptocurrency and other sectors where speed is paramount.
 
 ## Tests
 
